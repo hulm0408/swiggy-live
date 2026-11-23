@@ -16,9 +16,12 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![dark](docs/dark.png) |
 
-> The `docs/auth-*.png` and `docs/api-console.png` shots in this folder predate the
-> access-key login and the removal of the in-app endpoint console. They are stale;
-> nothing in the app looks like them any more.
+| Sign in | Signed in |
+|---|---|
+| ![login](docs/login.png) | ![signed in](docs/login-signed-in.png) |
+
+> `docs/auth-*.png` and `docs/api-console.png` predate the access-key login and the
+> removal of the in-app endpoint console. They are stale, and kept only for history.
 
 ```bash
 git clone <this repo> && cd swiggy-live
