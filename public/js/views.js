@@ -515,12 +515,22 @@
   /* ---------------------------------------------------------------- API CONSOLE */
   RENDERERS.api = async function () {
     S.tab = 'api';
-    const r = await API.map();
+    const [r, h] = await Promise.all([API.map(), API.health()]);
     const map = (r && r.map) || [];
+    const build = h && h.ok ? h : null;
     const tone = (t) => (t === 'public' ? 'ok' : t === 'blocked' ? 'bad' : 'warn');
     return `<div class="apihead">
       <h1>Endpoint map</h1>
       <p>Every route below was found by probing the app's own network surface, then verified from this box. Run any of them.</p>
+      ${
+        build
+          ? `<div class="buildrow">
+        <span class="bdot"></span>
+        <b>${esc(String(build.commit).slice(0, 7))}</b>
+        <span>${esc(build.branch)}${build.env && build.env.sms ? '' : ' · dev OTP'}${build.authStore && build.authStore.persistent ? ' · disk' : ' · ephemeral store'}</span>
+      </div>`
+          : '<div class="buildrow bad"><span class="bdot"></span><b>no /api/health</b><span>this host is not running server.js</span></div>'
+      }
     </div>
     <div class="apilist">
       ${map

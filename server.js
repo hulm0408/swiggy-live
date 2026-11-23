@@ -484,6 +484,29 @@ const MIME = {
 
 function serveStatic(req, res) {
   let rel = decodeURIComponent(req.url.split('?')[0]);
+  /* health: tells you exactly which build the host is running */
+  if (rel === '/api/health') {
+    const A = require('./auth.js');
+    const info = A.storeInfo ? A.storeInfo() : {};
+    const body = JSON.stringify({
+      ok: true,
+      app: 'swiggy-live',
+      commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local',
+      branch: process.env.RENDER_GIT_BRANCH || 'local',
+      node: process.version,
+      uptime: Math.round(process.uptime()),
+      authStore: info,
+      env: {
+        sms: !!(process.env.SMS_WEBHOOK_URL),
+        devMode: process.env.AUTH_DEV_MODE !== '0',
+        dataDir: process.env.DATA_DIR || null,
+        port: PORT,
+      },
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(body);
+  }
+
   if (rel === '/') rel = '/index.html';
   const file = path.join(ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!file.startsWith(ROOT)) {

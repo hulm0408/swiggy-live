@@ -113,6 +113,7 @@ const Core = (function () {
     logout: () => post('/api/auth/logout', {}),
     keyLogin: (key) => post('/api/auth/key/login', { key }),
     keys: () => api('/api/auth/keys', { ttl: 0 }),
+    health: () => api('/api/health', { ttl: 0 }),
     revokeKey: (id) => post('/api/auth/key/revoke', { id }),
   };
 

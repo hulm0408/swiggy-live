@@ -1,0 +1,21 @@
+# Render blueprint — Web Service (NOT a Static Site: this app has a Node proxy + auth store)
+services:
+  - type: web
+    name: swiggy-live
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: DATA_DIR
+        value: /var/data        # must match the disk mount below
+    disk:
+      name: auth-data
+      mountPath: /var/data
+      sizeGB: 1

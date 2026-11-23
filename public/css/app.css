@@ -855,3 +855,14 @@ img { display: block; }
 .keyrow b { display: block; font-family: var(--font-head); font-size: 12.5px; font-weight: 800; }
 .keyrow span { font-size: 10.5px; color: var(--faint); }
 .keyrow .revoke { font-size: 10.5px; font-weight: 900; color: var(--red-ink); background: var(--red-soft); padding: 5px 10px; border-radius: var(--r-full); }
+
+/* build identity chip on the API tab */
+.buildrow {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; padding: 6px 12px;
+  border-radius: var(--r-full); background: var(--bg-active); border: 1px solid rgba(56,189,248,.35);
+  font-size: 10.5px; font-weight: 700; color: var(--muted);
+}
+.buildrow b { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--blue-deep); }
+.buildrow .bdot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); }
+.buildrow.bad { background: var(--red-soft); border-color: rgba(255,77,77,.35); }
+.buildrow.bad .bdot { background: var(--red); }

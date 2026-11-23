@@ -15,7 +15,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, 'data');
+/* on Render a persistent disk mounts at /var/data, so the store must be relocatable */
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const STORE = path.join(DATA_DIR, 'auth.json');
 
 const OTP_TTL_MS = 5 * 60 * 1000;
@@ -36,6 +37,11 @@ try {
 } catch (e) {}
 
 let flushT;
+function storeInfo() {
+  const persistent = !!process.env.DATA_DIR;
+  return { path: STORE, persistent, exists: fs.existsSync(STORE) };
+}
+
 function persist() {
   clearTimeout(flushT);
   flushT = setTimeout(() => {
@@ -340,4 +346,5 @@ function currentUser(req) {
   return db.users[sess.phone] || { phone: sess.phone };
 }
 
-module.exports = { handle, currentUser, DEV_MODE };
+module.exports = {
+  storeInfo, handle, currentUser, DEV_MODE };
