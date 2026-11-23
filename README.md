@@ -27,6 +27,8 @@ node server.js          # http://localhost:3000
 
 No runtime dependencies. Node 18+. `npm test` runs the end-to-end harness (jsdom, dev-only).
 
+**Scope in one line:** public catalogue data, read-only, plus a local access key that this server issued. No session importing, no borrowed credentials, no scraping, no real orders. The line and where the code enforces it: [POLICY.md](POLICY.md). Non-affiliation, trademarks, before-you-run-it: [NOTICE.md](NOTICE.md).
+
 ---
 
 ## 0. Design

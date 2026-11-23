@@ -32,7 +32,15 @@ const ACCESS_KEY_PREFIX = 'SWG';
 const ACCESS_KEY_RE = /^SWG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 
-const SEED_ACCESS_KEYS = [{ key: 'SWG-WZEY-9089-69ZS', label: 'Owner', admin: true }];
+/* No key is ever written into source. Keys come from AUTH_ACCESS_KEYS, or — when
+   nothing is configured — one is generated at boot and printed once to the console,
+   exactly like a dev OTP. A committed key is a key you cannot rotate and everyone
+   who can read the repo can use. */
+let BOOT_GENERATED_KEY = null;
+
+/* Keys that appeared in a commit are public. Rotate them out on sight rather than
+   trusting that nobody kept a copy of the file. */
+const BURNED_KEYS = ['SWG-WZEY-9089-69ZS'];
 
 /* ---------------- claim slots ----------------
  * One claim per slot per IST calendar day, per access key. Windows are IST.
@@ -142,7 +150,7 @@ function registerAccessKey(key, label, admin) {
 /* seed once, from the built-in list and AUTH_ACCESS_KEYS. Existing entries win,
    so a key revoked here stays revoked. */
 function seedAccessKeys() {
-  const want = SEED_ACCESS_KEYS.slice();
+  const want = [];
   const env = String(process.env.AUTH_ACCESS_KEYS || '');
   for (const part of env.split(',')) {
     const s = part.trim();
@@ -159,7 +167,35 @@ function seedAccessKeys() {
     added++;
   }
   if (added) persist();
-  return added;
+
+  /* a key that has been in git is no longer a secret */
+  for (const burned of BURNED_KEYS) {
+    const rec = db.access_keys[sha(burned)];
+    if (rec && !rec.revoked) {
+      rec.revoked = true;
+      rec.revokedReason = 'published in repository history';
+      console.log(`  revoked previously committed key (${burned.slice(0, 8)}…)`);
+    }
+  }
+
+  /* nothing configured anywhere: mint one admin key for this boot only */
+  const live = Object.values(db.access_keys).filter((k) => !k.revoked);
+  if (!live.length) {
+    const key = newAccessKey();
+    registerAccessKey(key, 'Owner', true);
+    BOOT_GENERATED_KEY = key;
+    console.log(`
+  ── ACCESS KEY (dev) ────────────────────────────────
+   ${key}
+   sign in with this · it is regenerated whenever the
+   container restarts, so set AUTH_ACCESS_KEYS for a
+   key that survives a deploy
+  ────────────────────────────────────────────────────
+`);
+  }
+
+  persist();
+  return added + (BOOT_GENERATED_KEY ? 1 : 0);
 }
 
 function parseCookies(req) {

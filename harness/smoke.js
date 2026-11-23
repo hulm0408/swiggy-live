@@ -14,7 +14,8 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 
 const PORT = Number(process.env.TEST_PORT || 3999);
 const BASE = 'http://127.0.0.1:' + PORT + '/';
-const KEY = process.env.TEST_KEY || 'SWG-WZEY-9089-69ZS';
+/* the harness provisions its own key — never one that exists in git */
+const KEY = process.env.TEST_KEY || 'SWG-TEST-HARN-ESS0';
 const ROOT = path.join(__dirname, '..');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'swg-test-'));
 
@@ -124,7 +125,11 @@ let server;
 function startServer() {
   server = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
     cwd: ROOT,
-    env: Object.assign({}, process.env, { PORT: String(PORT), DATA_DIR }),
+    env: Object.assign({}, process.env, {
+      PORT: String(PORT),
+      DATA_DIR,
+      AUTH_ACCESS_KEYS: KEY + '=Owner:admin',
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', () => {});
