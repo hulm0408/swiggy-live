@@ -16,6 +16,10 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![api](docs/api-console.png) |
 
+| Sign in | OTP | Signed in |
+|---|---|---|
+| ![sign in](docs/auth-phone.png) | ![otp](docs/auth-otp.png) | ![signed in](docs/auth-signed-in.png) |
+
 | Dark |
 |---|
 | ![dark](docs/dark.png) |
@@ -58,6 +62,43 @@ Light and dark both ship; the toggle sits in the app bar and persists. Everythin
 The browser never talks to Swiggy. It talks to `/api/*` on this box; this box talks to `www.swiggy.com` and slims the protobuf-JSON down to view models (132 KB listing → ~20 KB; 134 KB menu → structured sections).
 
 ---
+
+## 1b. Auth — phone + OTP
+
+`auth.js` is a self-contained module. It issues codes for a number you hold, verifies them, and keeps the session server-side.
+
+```
+POST /api/auth/otp/request   { phone: "9876543210" }
+     → { ok, requestId, expiresIn: 300, resendAfter: 30, devCode? }
+
+POST /api/auth/otp/verify    { requestId, code: "123456" }
+     → { ok, signedIn: true, user } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
+
+GET  /api/auth/me            → { ok, signedIn, user }
+POST /api/auth/logout        → clears the cookie, drops the session
+```
+
+**Posture**
+
+| | |
+|---|---|
+| Code at rest | `sha256(code + per-request salt)`, never plaintext |
+| Code life | 5 min, single use, newest code invalidates older ones for that number |
+| Brute force | 5 verify attempts per request, then the request dies |
+| Rate limits | 5 codes/hour/phone · 12 requests/hour/IP |
+| Session | opaque 32-byte id held server-side, delivered as an **HttpOnly** cookie — no token in JS, nothing for a script to read |
+| Lifetime | 30 days, rolling when used |
+| Storage | `data/auth.json`, git-ignored, atomic writes |
+
+**Sending real SMS.** Set `SMS_WEBHOOK_URL` (and optionally `SMS_WEBHOOK_TOKEN`) and the module POSTs `{ phone, otp, ttl_seconds }` to your gateway instead of printing to the console:
+
+```bash
+SMS_WEBHOOK_URL=https://your-gateway.example/send SMS_WEBHOOK_TOKEN=xxx node server.js
+COOKIE_SECURE=1 node server.js     # behind TLS
+AUTH_DEV_MODE=0 node server.js     # refuse to leak devCode to the client
+```
+
+With no gateway configured it runs in dev mode: the code prints to the server console and, only then, is echoed to the client so the flow is testable without an SMS bill.
 
 ## 2. The endpoint map
 
@@ -146,6 +187,7 @@ GET https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w
 
 **Modelled locally, on purpose:**
 
+- **Auth.** OTP issue/verify, sessions and cookies are real code — see §1b. What is *not* here, by design: importing or replaying someone else's session. There is no session-JSON box and no key importer; a session can only be minted by proving control of the number.
 - **Cart, bill, checkout, tracking.** The cart endpoints sit behind the authed tier. Rather than fake an OTP flow or replay someone's session, the cart is local and priced off live menu data. Delivery/platform/GST lines are modelled with a `199` free-delivery threshold; the bill says so on screen.
 - **Order placement.** No order is sent anywhere. Placing one creates a local order object with a simulated rider timeline.
 - **Instamart and Dineout.** Deliberately not faked. Both tabs show the actual probe result and what it would take to open them.

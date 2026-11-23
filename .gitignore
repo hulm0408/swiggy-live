@@ -6,3 +6,4 @@ npm-debug.log*
 .env.*
 devtools/
 libs/
+data/

@@ -577,14 +577,86 @@
     <div class="banner"><b>Next step:</b> pull the Dineout tab out of an APK's JS bundle (React Native ships readable route strings) or catch it with a MITM proxy on a rooted device.</div>`;
   };
 
+  /* ---------------------------------------------------------------- AUTH */
+  RENDERERS.auth = async function () {
+    const a = S.auth;
+    const step = a.step;
+    const secsLeft = Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000));
+
+    const header = `<div class="authbar">
+      <button class="iconbtn" data-act="auth-back">${icon('back', 20)}</button>
+      <b>${step === 'otp' ? 'Verify number' : 'Sign in'}</b>
+    </div>`;
+
+    if (step === 'phone') {
+      return `${header}
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <div class="auth-icon">${icon('user', 26)}</div>
+          <h1>Sign in with your number</h1>
+          <p>We send a 6-digit code to the number you own. No passwords, nothing stored on the device.</p>
+          <label class="field-label">Mobile number</label>
+          <div class="phone-field">
+            <span class="pf-cc">+91</span>
+            <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="98765 43210"
+              value="${esc(a.phone || '')}" autocomplete="tel-national">
+          </div>
+          <button class="btn solid wide auth-cta" data-act="otp-send" id="otpSendBtn">Send OTP</button>
+          <div class="auth-foot">
+            <span class="lockline">${icon('check', 12)} Code hashed at rest · 5 min life · single use</span>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    return `${header}
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-icon">${icon('check', 26)}</div>
+        <h1>Enter the code</h1>
+        <p>Sent to <b>+91 ${esc(a.phone || '')}</b>. It expires in ${Math.ceil((a.expiresAt - Date.now()) / 1000) > 0 ? Math.ceil((a.expiresAt - Date.now()) / 60000) : 0} min.</p>
+        ${a.devCode ? `<div class="dev-chip">${icon('bolt', 12)} Dev mode · code <b>${esc(a.devCode)}</b> (no SMS configured)</div>` : ''}
+        <div class="otp-row" id="otprow">
+          ${[0, 1, 2, 3, 4, 5].map((i) => `<input class="otpbox" data-i="${i}" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}">`).join('')}
+        </div>
+        <div class="auth-error" id="otpErr"></div>
+        <button class="btn solid wide auth-cta" data-act="otp-verify">Verify &amp; sign in</button>
+        <div class="auth-foot">
+          <button class="linkbtn" data-act="otp-resend" ${secsLeft > 0 ? 'disabled' : ''}>
+            ${secsLeft > 0 ? `Resend in ${secsLeft}s` : 'Resend code'}
+          </button>
+          <button class="linkbtn" data-act="auth-change">Change number</button>
+        </div>
+      </div>
+    </div>`;
+  };
+
   /* ---------------------------------------------------------------- ACCOUNT */
   RENDERERS.account = async function () {
     S.tab = 'orders';
+    const u = S.user;
+    const profile = u
+      ? `<div class="acct-top">
+          <div class="av-btn big signed">${icon('user', 24)}</div>
+          <div style="flex:1;min-width:0">
+            <h2>+91 ${esc(u.masked.replace('+91 ', ''))}</h2>
+            <span>Signed in${u.logins ? ` · ${u.logins} login${u.logins > 1 ? 's' : ''}` : ''}</span>
+          </div>
+          <button class="mini ghost" data-act="sign-out">Sign out</button>
+        </div>`
+      : `<div class="acct-top">
+          <div class="av-btn big">${icon('user', 24)}</div>
+          <div style="flex:1;min-width:0">
+            <h2>Guest</h2>
+            <span>Sign in with your number to keep orders</span>
+          </div>
+        </div>
+        <div class="pad-16" style="padding-top:0">
+          <button class="btn solid wide" data-act="go-auth">Sign in with OTP</button>
+        </div>`;
+
     return `${appBar()}
-    <div class="acct-top">
-      <div class="av-btn big">${icon('user', 24)}</div>
-      <div><h2>Guest</h2><span>Orders placed in this session</span></div>
-    </div>
+    ${profile}
     ${sectionHead('wallet', 'Account', undefined)}
     <div class="acct-list">
       <div class="arow">${icon('order', 17)}<div><b>Orders</b><span>${S.orders.length} in this session</span></div></div>
@@ -720,6 +792,79 @@
     },
     'open-track': (el) => go('track', { id: el.dataset.id }),
     'go-account': () => go('account', {}),
+
+    /* ---- auth ---- */
+    'go-auth': () => {
+      S.auth = { step: 'phone', requestId: null, devCode: null, phone: S.auth.phone || '', resendAt: 0 };
+      go('auth', {});
+    },
+    'auth-back': () => back(),
+    'auth-change': () => {
+      S.auth.step = 'phone';
+      C.render();
+    },
+    'otp-send': async () => {
+      const el = $('#phone');
+      const phone = (el && el.value ? el.value : '').replace(/\D/g, '');
+      if (phone.length !== 10) return toast('Enter a 10-digit mobile number');
+      const btn = $('#otpSendBtn');
+      if (btn) btn.textContent = 'Sending…';
+      const r = await API.requestOtp(phone);
+      if (!r.ok) {
+        if (btn) btn.textContent = 'Send OTP';
+        return toast(r.message || 'Could not send the code');
+      }
+      S.auth = {
+        step: 'otp',
+        requestId: r.requestId,
+        phone: r.phone,
+        devCode: r.devCode || null,
+        expiresAt: Date.now() + (r.expiresIn || 300) * 1000,
+        resendAt: Date.now() + (r.resendAfter || 30) * 1000,
+      };
+      C.render();
+      setTimeout(() => {
+        const first = $('.otpbox');
+        if (first) first.focus();
+      }, 60);
+    },
+    'otp-resend': async () => {
+      if (S.auth.resendAt > Date.now()) return;
+      const r = await API.requestOtp(S.auth.phone);
+      if (!r.ok) return toast(r.message || 'Could not resend');
+      S.auth.requestId = r.requestId;
+      S.auth.devCode = r.devCode || null;
+      S.auth.expiresAt = Date.now() + (r.expiresIn || 300) * 1000;
+      S.auth.resendAt = Date.now() + (r.resendAfter || 30) * 1000;
+      toast('New code sent');
+      C.render();
+    },
+    'otp-verify': async () => {
+      const code = $$('.otpbox').map((i) => i.value).join('');
+      const err = $('#otpErr');
+      if (code.length !== 6) {
+        if (err) err.textContent = 'Enter all six digits.';
+        return;
+      }
+      const r = await API.verifyOtp(S.auth.requestId, code);
+      if (!r.ok) {
+        if (err) err.textContent = r.message || 'That code is not right.';
+        $$('.otpbox').forEach((i) => (i.value = ''));
+        const first = $('.otpbox');
+        if (first) first.focus();
+        return;
+      }
+      S.user = r.user;
+      S.auth = { step: 'phone', requestId: null, devCode: null, phone: '', resendAt: 0 };
+      toast('Signed in as +91 ' + r.user.phone);
+      reset('account');
+    },
+    'sign-out': async () => {
+      await API.logout();
+      S.user = null;
+      toast('Signed out');
+      C.render();
+    },
 
     'pick-loc': () => {
       const keys = Object.keys(C.LOC);
@@ -893,7 +1038,20 @@
     box.innerHTML = renderSearchResults(r, tab, str);
   }
 
+  /* OTP boxes: digits only, auto-advance, backspace walks back, paste fills the row */
   document.addEventListener('input', (e) => {
+    const box = e.target.closest('.otpbox');
+    if (box) {
+      const v = box.value.replace(/\D/g, '').slice(-1);
+      box.value = v;
+      box.classList.toggle('filled', !!v);
+      const boxes = Array.from(document.querySelectorAll('.otpbox'));
+      const i = boxes.indexOf(box);
+      if (v && i < boxes.length - 1) boxes[i + 1].focus();
+      const err = document.getElementById('otpErr');
+      if (err) err.textContent = '';
+      return;
+    }
     const inp = e.target.closest('#q');
     if (!inp) return;
     const v = inp.value.trim();
@@ -907,6 +1065,38 @@
   });
 
   /* ---------------------------------------------------------------- delegated clicks */
+  document.addEventListener('keydown', (e) => {
+    const box = e.target.closest && e.target.closest('.otpbox');
+    if (!box) return;
+    const boxes = Array.from(document.querySelectorAll('.otpbox'));
+    const i = boxes.indexOf(box);
+    if (e.key === 'Backspace' && !box.value && i > 0) {
+      boxes[i - 1].focus();
+      boxes[i - 1].value = '';
+      boxes[i - 1].classList.remove('filled');
+    }
+    if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
+    if (e.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
+    if (e.key === 'Enter') {
+      const btn = document.querySelector('[data-act="otp-verify"]');
+      if (btn) btn.click();
+    }
+  });
+
+  document.addEventListener('paste', (e) => {
+    const boxes = Array.from(document.querySelectorAll('.otpbox'));
+    if (!boxes.length) return;
+    const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+    const digits = text.replace(/\D/g, '').slice(0, 6);
+    if (!digits) return;
+    e.preventDefault();
+    boxes.forEach((b, i) => {
+      b.value = digits[i] || '';
+      b.classList.toggle('filled', !!digits[i]);
+    });
+    boxes[Math.min(digits.length, 5)].focus();
+  });
+
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;

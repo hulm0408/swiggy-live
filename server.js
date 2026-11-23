@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const auth = require('./auth');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = '0.0.0.0';
@@ -504,6 +505,18 @@ function serveStatic(req, res) {
 /* ------------------------------------------------------------------ */
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
+
+  /* auth lives in its own module: phone + OTP, server-held sessions */
+  if (url.pathname.startsWith('/api/auth/')) {
+    res.setHeader('Cache-Control', 'no-store');
+    const handled = await auth.handle(req, res, url, (r, code, payload) => {
+      r.setHeader('Content-Type', 'application/json; charset=utf-8');
+      r.writeHead(code);
+      r.end(JSON.stringify(payload));
+    });
+    if (handled !== false) return;
+  }
+
   const route = routes[url.pathname];
 
   if (!route) return serveStatic(req, res);

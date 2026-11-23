@@ -50,7 +50,7 @@
       };
       tick();
       setInterval(tick, 20000);
-      Core.render();
+      Core.refreshUser ? Core.refreshUser().finally(() => Core.render()) : Core.render();
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { Core.closeSheet(); }
       });

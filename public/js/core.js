@@ -46,6 +46,8 @@ const Core = (function () {
     tip: 0,
     pay: 'upi',
     offline: false,
+    user: null,
+    auth: { step: 'phone', requestId: null, devCode: null, phone: null, resendAt: 0 },
     live: { listingMs: 0, menuMs: 0, calls: 0 },
   };
 
@@ -103,7 +105,35 @@ const Core = (function () {
     suggest: (str) => api('/api/suggest?' + q({ str, lat: here().lat, lng: here().lng })),
     raw: (path) => api('/api/raw?' + q({ path }), { ttl: 0 }),
     map: () => api('/api/map', { ttl: Infinity }),
+
+    /* ---- auth (phone + OTP, HttpOnly cookie session) ---- */
+    me: () => api('/api/auth/me', { ttl: 0 }),
+    requestOtp: (phone) => post('/api/auth/otp/request', { phone }),
+    verifyOtp: (requestId, code) => post('/api/auth/otp/verify', { requestId, code }),
+    logout: () => post('/api/auth/logout', {}),
   };
+
+  async function post(path, body) {
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body || {}),
+      });
+      const json = await res.json();
+      json.__status = res.status;
+      return json;
+    } catch (e) {
+      return { ok: false, error: 'NO_ROUTE', message: 'Cannot reach the server. Is it running?' };
+    }
+  }
+
+  async function refreshUser() {
+    const r = await API.me();
+    S.user = r && r.ok && r.signedIn ? r.user : null;
+    return S.user;
+  }
 
   /* ---------- router ---------- */
   let token = 0;
@@ -350,5 +380,6 @@ const Core = (function () {
     timeAgo,
     store,
     applyTheme,
+    refreshUser,
   };
 })();

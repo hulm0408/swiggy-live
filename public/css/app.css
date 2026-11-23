@@ -765,3 +765,64 @@ img { display: block; }
 @keyframes rot { to { transform: rotate(360deg); } }
 .tap { transform: scale(0.97); }
 .err { font-size: 10px; color: var(--red-ink); white-space: pre-wrap; }
+
+/* ---------------- auth (phone + OTP) ---------------- */
+.authbar {
+  display: flex; align-items: center; gap: 6px; padding: 12px 12px 10px 8px;
+  border-bottom: 1px solid var(--border); background: var(--bg-card);
+}
+.authbar b { font-family: var(--font-head); font-size: 15px; font-weight: 800; }
+.auth-wrap { padding: 18px 14px; display: flex; justify-content: center; }
+.auth-card {
+  width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 22px 18px 18px; text-align: center;
+}
+.auth-icon {
+  width: 62px; height: 62px; margin: 0 auto 14px; border-radius: 20px;
+  background: var(--grad); color: #fff; display: grid; place-items: center; box-shadow: var(--glow);
+}
+.auth-card h1 { font-family: var(--font-head); font-size: 19px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.02em; }
+.auth-card p { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0 0 18px; }
+.auth-card p b { color: var(--text); }
+.field-label {
+  display: block; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--faint); margin-bottom: 7px;
+}
+.phone-field {
+  display: flex; align-items: center; height: 52px; border-radius: var(--r-md);
+  background: var(--bg-input); border: 1.5px solid var(--border); overflow: hidden; margin-bottom: 14px;
+}
+.pf-cc {
+  display: grid; place-items: center; width: 58px; height: 100%; flex: 0 0 auto;
+  font-size: 13.5px; font-weight: 800; color: var(--muted);
+  border-right: 1px solid var(--border-strong); background: var(--bg-soft);
+}
+.phone-field input {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 0 14px;
+  font-family: var(--font-head); font-size: 17px; font-weight: 700; letter-spacing: 0.02em; color: var(--text);
+}
+.phone-field input::placeholder { color: var(--faint); font-weight: 600; letter-spacing: 0; }
+.auth-cta { height: 52px; font-size: 14.5px; }
+.auth-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.auth-foot .linkbtn[disabled] { color: var(--faint); cursor: default; }
+.lockline { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--faint); font-weight: 600; }
+.lockline svg { color: var(--green); }
+
+.otp-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; }
+.otpbox {
+  width: 100%; max-width: 48px; height: 56px; border-radius: var(--r-md); text-align: center;
+  background: var(--bg-input); border: 1.5px solid var(--border); outline: none;
+  font-family: var(--font-head); font-size: 21px; font-weight: 800; color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.otpbox:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18); background: var(--bg-card); }
+.otpbox.filled { border-color: var(--blue); background: var(--bg-active); }
+.auth-error { min-height: 16px; font-size: 11px; color: var(--red-ink); font-weight: 700; margin: 6px 0 10px; }
+.dev-chip {
+  display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; padding: 7px 12px;
+  border-radius: var(--r-full); background: var(--amber-soft); color: var(--amber-ink);
+  font-size: 10.5px; font-weight: 700;
+}
+.dev-chip b { font-family: var(--font-head); font-size: 12.5px; letter-spacing: 0.08em; }
+.av-btn.signed { background: var(--grad); color: #fff; border: 0; box-shadow: var(--glow); }
+.mini.ghost { background: var(--bg-input); color: var(--muted); border: 1px solid var(--border-strong); box-shadow: none; }
