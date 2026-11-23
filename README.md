@@ -1,5 +1,8 @@
 # swiggy-live
 
+> ### Educational project
+> Built as a **college project** to study how a consumer app structures its own network surface — and to learn auth, proxying and front-end engineering by rebuilding them. It is not affiliated with Swiggy, not a product, and not for commercial use. Read [NOTICE.md](NOTICE.md) before you run it.
+
 **The Swiggy Android app, rebuilt as a web app on the app's own endpoints** — reverse-engineered by probing its network surface, not from docs, not from a wrapper, not scraped out of a browser session.
 
 Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by default; anywhere you point `lat/lng`.
@@ -16,9 +19,9 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![dark](docs/dark.png) |
 
-| Sign in | Signed in |
-|---|---|
-| ![login](docs/login.png) | ![signed in](docs/login-signed-in.png) |
+| Sign in | Enter the code | Signed in |
+|---|---|---|
+| ![login](docs/login-phone.png) | ![otp](docs/login-otp.png) | ![signed in](docs/login-signed-in.png) |
 
 > `docs/auth-*.png` and `docs/api-console.png` predate the access-key login and the
 > removal of the in-app endpoint console. They are stale, and kept only for history.
@@ -66,29 +69,57 @@ The browser never talks to Swiggy. It talks to `/api/*` on this box; this box ta
 
 ---
 
-## 1b. Auth — one key, JSON in, JSON out
+## 1b. Auth — phone + OTP (real SMS), and access keys
 
-There is no phone number, no OTP, no password. `auth.js` holds a table of access
-keys; the app has exactly one field and posts one JSON body.
+Two ways in. A **mobile number with a real 6-digit code**, or an **access key** for a
+demo account. Both mint the same thing: an opaque session id in an `HttpOnly` cookie.
 
 ```
-POST /api/auth/login      { key: "SWG-XXXX-XXXX-XXXX" }
+POST /api/auth/otp/request   { phone: "9876543210" }
+     → { ok, requestId, masked, expiresIn: 300, resendAfter: 30, channel, devCode? }
+
+POST /api/auth/otp/verify    { requestId, code: "802914" }
      → { ok, signedIn: true, user, claims } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
 
-GET  /api/auth/me         → { ok, signedIn, user, claims }
-POST /api/auth/logout     → clears the cookie, drops the session
+GET  /api/auth/otp/status    → whether a real SMS provider is configured
 
-POST /api/auth/keys/mint    { label }        → { ok, key }        (admin keys only)
-GET  /api/auth/keys/all                        → every live key    (admin keys only)
-POST /api/auth/keys/revoke  { id } or { key }  → kill one, and every session it holds
+POST /api/auth/login         { key: "SWG-XXXX-XXXX-XXXX" }     → the same session shape
+GET  /api/auth/me            → { ok, signedIn, user, claims }
+POST /api/auth/logout        → clears the cookie, drops the session
+
+POST /api/auth/keys/mint     { label }         → { ok, key }     (admin keys only)
+GET  /api/auth/keys/all                        → every live key   (admin keys only)
+POST /api/auth/keys/revoke   { id } or { key } → kill one and its sessions
 ```
 
-The login field takes the bare key **or** the JSON body itself — paste
-`{"key":"SWG-XXXX-XXXX-XXXX"}` and it parses.
+### Making the SMS real
 
-### Keys
+The `request` route mints the code, hashes it, and hands it to whichever provider is
+configured — first match wins, nothing to change in code:
 
-No key ships in the repository. With nothing configured, the server generates one
+| Provider | Environment variables |
+|---|---|
+| **Twilio** | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM` (or `TWILIO_MESSAGING_SERVICE_SID`) |
+| **MSG91** (India) | `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID` — the code is pushed into the template's `##OTP##` |
+| **Fast2SMS** (India) | `FAST2SMS_API_KEY`, optional `FAST2SMS_ROUTE` (default `q`) |
+| **Vonage** | `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM` |
+| **Your own gateway** | `SMS_WEBHOOK_URL`, optional `SMS_WEBHOOK_TOKEN` — receives `{ phone, otp, ttl_seconds, message }` |
+
+On Render: **Environment → Add Environment Variable**, paste the keys, redeploy. `GET /api/auth/otp/status`
+then flips to `{"configured": true, "provider": "fast2sms"}` and the dev chip disappears from the UI.
+
+With nothing configured it stays in console mode: the code is printed to the server log
+and shown in the app so the flow can be built and tested without an SMS bill.
+`AUTH_DEV_MODE=0` turns that echo off, which is what you want the day real SMS is on.
+
+```
+5 codes/hour per number · 12 per hour per IP · 30s resend cooldown
+5 wrong attempts kills the code · codes are single-use · 5-minute life
+```
+
+### Access keys
+
+For demo accounts. No key ships in the repository. With nothing configured, the server generates one
 admin key at boot and prints it once:
 
 ```

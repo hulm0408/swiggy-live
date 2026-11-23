@@ -931,3 +931,17 @@ img { display: block; }
 /* account rows used as buttons */
 button.arow { width: 100%; text-align: left; font: inherit; cursor: pointer; }
 button.arow .chev { margin-left: auto; color: var(--faint); display: grid; place-items: center; }
+
+/* busy state for async buttons */
+.btn.busy { opacity: 0.65; pointer-events: none; }
+.btn.busy::after {
+  content: ''; width: 14px; height: 14px; margin-left: 8px; display: inline-block;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%;
+  animation: spin .7s linear infinite; vertical-align: -2px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.auth-note {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 10px; font-weight: 600; color: var(--faint); letter-spacing: 0.01em;
+}

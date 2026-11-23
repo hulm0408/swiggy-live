@@ -50,7 +50,7 @@ const Core = (function () {
     claims: null,
     success: null,
     linkKey: '',
-    auth: { key: store.get('sw.lastkey', '') },
+    auth: { key: store.get('sw.lastkey', ''), mode: 'phone', step: 'phone', phone: '', requestId: '', devCode: '', resendAt: 0, devEcho: false },
     live: { listingMs: 0, menuMs: 0, calls: 0 },
   };
 
@@ -119,6 +119,9 @@ const Core = (function () {
     /* ---- auth: JSON in, JSON out. One field. ---- */
     me: () => api('/api/auth/me', { ttl: 0 }),
     login: (key) => post('/api/auth/login', { key }),
+    otpStatus: () => api('/api/auth/otp/status', { ttl: 0 }),
+    requestOtp: (phone) => post('/api/auth/otp/request', { phone }),
+    verifyOtp: (requestId, code) => post('/api/auth/otp/verify', { requestId, code }),
     logout: () => post('/api/auth/logout', {}),
     claims: () => api('/api/auth/claims', { ttl: 0 }),
     claim: (slot) => post('/api/auth/claim', { slot }),

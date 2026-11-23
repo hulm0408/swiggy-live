@@ -488,17 +488,73 @@
   /* ---------------------------------------------------------------- LOGIN */
   RENDERERS.login = async function (params) {
     const err = (params && params.err) || '';
+    const a = S.auth;
+    const mode = a.mode || 'phone';
+
+    const seg = `<div class="authseg">
+      <button class="stab ${mode === 'phone' ? 'on' : ''}" data-act="auth-mode" data-m="phone">Mobile</button>
+      <button class="stab ${mode === 'key' ? 'on' : ''}" data-act="auth-mode" data-m="key">Access key</button>
+    </div>`;
+
+    /* --- the code step --- */
+    if (mode === 'phone' && a.step === 'otp') {
+      const left = Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000));
+      return `<div class="authbar"><button class="iconbtn" data-act="auth-back">${icon('back', 20)}</button><b>Verify number</b></div>
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <div class="auth-icon">${icon('one', 26)}</div>
+          <h1>Enter the code</h1>
+          <p>Sent to <b>+91 ${esc(a.phone || '')}</b>${a.channel && a.channel !== 'console' ? ' via ' + esc(a.channel) : ''}. Valid 5 minutes, one use.</p>
+          ${a.devCode ? `<div class="dev-chip">${icon('bolt', 12)} Dev mode · code <b>${esc(a.devCode)}</b> · no SMS provider configured</div>` : ''}
+          <div class="otp-row">
+            ${[0, 1, 2, 3, 4, 5].map((i) => `<input class="otpbox" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}">`).join('')}
+          </div>
+          <div class="auth-error" id="otpErr"></div>
+          <button class="btn solid wide auth-cta" data-act="otp-verify">Verify &amp; sign in</button>
+          <div class="auth-foot">
+            <button class="linkbtn" data-act="otp-resend" ${left > 0 ? 'disabled' : ''}>${left > 0 ? `Resend in ${left}s` : 'Resend code'}</button>
+            <button class="linkbtn" data-act="auth-change">Change number</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    /* --- the key screen (kept alongside the phone) --- */
+    if (mode === 'key') {
+      return `<div class="authbar"><b>Sign in</b></div>
+      <div class="auth-wrap">
+        <div class="auth-card">
+          ${seg}
+          <div class="auth-icon">${icon('one', 26)}</div>
+          <h1>Enter your key</h1>
+          <div class="keyinput">
+            <input id="akey" spellcheck="false" autocomplete="off" autocapitalize="characters"
+              placeholder="SWG-XXXX-XXXX-XXXX" value="${esc(S.auth.key || '')}">
+          </div>
+          <div class="auth-error" id="keyErr">${esc(err)}</div>
+          <button class="btn solid wide auth-cta" data-act="key-login">Continue</button>
+          <div class="auth-note">College project · for learning, not a Swiggy product</div>
+        </div>
+      </div>`;
+    }
+
+    /* --- the number screen --- */
     return `<div class="authbar"><b>Sign in</b></div>
     <div class="auth-wrap">
       <div class="auth-card">
+        ${seg}
         <div class="auth-icon">${icon('one', 26)}</div>
-        <h1>Enter your key</h1>
-        <div class="keyinput">
-          <input id="akey" spellcheck="false" autocomplete="off" autocapitalize="characters"
-            placeholder="SWG-XXXX-XXXX-XXXX" value="${esc(S.auth.key || '')}">
+        <h1>Sign in with your number</h1>
+        <p>We send a 6-digit code to the number you own.</p>
+        <label class="field-label">Mobile number</label>
+        <div class="phone-field">
+          <span class="pf-cc">+91</span>
+          <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="98765 43210"
+            value="${esc(a.phone || '')}" autocomplete="tel-national">
         </div>
-        <div class="auth-error" id="keyErr">${esc(err)}</div>
-        <button class="btn solid wide auth-cta" data-act="key-login">Continue</button>
+        <div class="auth-error" id="phoneErr">${esc(err)}</div>
+        <button class="btn solid wide auth-cta" data-act="otp-send">Send code</button>
+        <div class="auth-note">College project · for learning, not a Swiggy product</div>
       </div>
     </div>`;
   };
@@ -834,6 +890,88 @@
     'go-login': () => go('login', {}),
     'go-claim': () => reset('claim', {}),
 
+    'auth-mode': (el) => {
+      S.auth.mode = el.dataset.m;
+      S.auth.step = 'phone';
+      C.render();
+    },
+    'auth-back': () => {
+      S.auth.step = 'phone';
+      C.render();
+    },
+    'auth-change': () => {
+      S.auth.step = 'phone';
+      C.render();
+    },
+    'otp-send': async () => {
+      const el = $('#phone');
+      const err = $('#phoneErr');
+      if (err) err.textContent = '';
+      const raw = ((el && el.value) || '').replace(/\D/g, '');
+      if (!/^[6-9]\d{9}$/.test(raw)) {
+        if (err) err.textContent = 'Enter a valid 10-digit mobile number.';
+        return;
+      }
+      const btn = document.querySelector('[data-act="otp-send"]');
+      if (btn) btn.classList.add('busy');
+      const r = await API.requestOtp(raw);
+      if (btn) btn.classList.remove('busy');
+      if (!r || !r.ok) {
+        if (err) err.textContent = (r && r.message) || 'Could not send the code.';
+        return;
+      }
+      S.auth.phone = r.phone || raw;
+      S.auth.requestId = r.requestId;
+      S.auth.devCode = r.devCode || '';
+      S.auth.channel = r.channel || '';
+      S.auth.step = 'otp';
+      S.auth.resendAt = Date.now() + (r.resendAfter || 30) * 1000;
+      C.render();
+      startResendTick();
+      const first = document.querySelector('.otpbox');
+      if (first) first.focus();
+    },
+    'otp-resend': async () => {
+      const err = $('#otpErr');
+      if (err) err.textContent = '';
+      const r = await API.requestOtp(S.auth.phone);
+      if (!r || !r.ok) {
+        if (err) err.textContent = (r && r.message) || 'Could not resend.';
+        return;
+      }
+      S.auth.requestId = r.requestId;
+      S.auth.devCode = r.devCode || '';
+      S.auth.channel = r.channel || '';
+      S.auth.resendAt = Date.now() + (r.resendAfter || 30) * 1000;
+      C.render();
+      startResendTick();
+      toast('New code sent');
+    },
+    'otp-verify': async () => {
+      const err = $('#otpErr');
+      if (err) err.textContent = '';
+      const code = Array.from(document.querySelectorAll('.otpbox')).map((b) => b.value).join('');
+      if (code.length !== 6) {
+        if (err) err.textContent = 'Enter all six digits.';
+        return;
+      }
+      const r = await API.verifyOtp(S.auth.requestId, code);
+      if (!r || !r.ok) {
+        if (err) err.textContent = (r && r.message) || 'That code was not accepted.';
+        if (r && (r.error === 'EXPIRED' || r.error === 'NO_REQUEST' || r.error === 'TOO_MANY_TRIES')) {
+          S.auth.step = 'phone';
+        }
+        return;
+      }
+      S.user = r.user;
+      S.claims = r.claims || {};
+      Object.values(S.claims).forEach((c) => c.claim && C.registerClaimCoupon(c.claim));
+      S.auth.step = 'phone';
+      S.auth.devCode = '';
+      toast('Signed in as ' + r.user.masked);
+      reset('claim');
+    },
+
     'key-login': async () => {
       const el = $('#akey');
       const err = $('#keyErr');
@@ -1107,7 +1245,20 @@
   }
 
   /* search box: debounced live search */
+  /* ---- OTP boxes: digits only, advance, backspace walks back, paste fills the row ---- */
   document.addEventListener('input', (e) => {
+    const box = e.target.closest('.otpbox');
+    if (box) {
+      const v = String(box.value || '').replace(/\D/g, '').slice(-1);
+      box.value = v;
+      box.classList.toggle('filled', !!v);
+      const boxes = Array.from(document.querySelectorAll('.otpbox'));
+      const i = boxes.indexOf(box);
+      if (v && i > -1 && i < boxes.length - 1) boxes[i + 1].focus();
+      const err = $('#otpErr');
+      if (err) err.textContent = '';
+      return;
+    }
     const inp = e.target.closest('#q');
     if (!inp) return;
     const v = inp.value.trim();
@@ -1119,6 +1270,54 @@
     }
     inp._t = setTimeout(() => runSearch(v, 'RESTAURANT'), 420);
   });
+
+  document.addEventListener('keydown', (e) => {
+    const box = e.target.closest && e.target.closest('.otpbox');
+    if (!box) return;
+    const boxes = Array.from(document.querySelectorAll('.otpbox'));
+    const i = boxes.indexOf(box);
+    if (e.key === 'Backspace' && !box.value && i > 0) {
+      boxes[i - 1].focus();
+      boxes[i - 1].value = '';
+      boxes[i - 1].classList.remove('filled');
+      e.preventDefault();
+    }
+    if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
+    if (e.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
+    if (e.key === 'Enter') {
+      const b = document.querySelector('[data-act="otp-verify"]');
+      if (b) b.click();
+    }
+  });
+
+  document.addEventListener('paste', (e) => {
+    const boxes = Array.from(document.querySelectorAll('.otpbox'));
+    if (!boxes.length) return;
+    const text = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6);
+    if (!text) return;
+    e.preventDefault();
+    boxes.forEach((b, i) => {
+      b.value = text[i] || '';
+      b.classList.toggle('filled', !!text[i]);
+    });
+    boxes[Math.min(text.length, 5)].focus();
+  });
+
+  /* resend countdown: repaint the second hand while the code screen is up */
+  let resendTick = null;
+  function startResendTick() {
+    clearInterval(resendTick);
+    resendTick = setInterval(() => {
+      const a = S.auth;
+      if (!a || a.step !== 'otp') {
+        clearInterval(resendTick);
+        return;
+      }
+      if (Date.now() < a.resendAt) return;
+      clearInterval(resendTick);
+      C.render();
+    }, 1000);
+  }
 
   /* ---------------------------------------------------------------- delegated clicks */
   document.addEventListener('click', (e) => {

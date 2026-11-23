@@ -1,5 +1,15 @@
 # Notice
 
+## Educational purpose
+
+This is a **college project**. It exists to learn: how a large consumer app organises
+its network surface, how a proxy normalises third-party JSON, how session auth works
+when you build it yourself, and how a UI is put together without a framework.
+
+It is coursework, not a startup. It is not monetised, not published as a service, and
+not a substitute for the real app. If you are marking it, or reviewing it: that is the
+lens to read it through.
+
 ## What this repository is
 
 A **research and learning artefact**. It studies how a large consumer app organises its own network surface — how a listing page is assembled, how a menu is fetched, what parameters an endpoint needs — and rebuilds an interface over what it learned, so the behaviour can be inspected and taught.

@@ -158,11 +158,59 @@ function waitForHttp(url) {
   let win = dom.window;
   await waitFor(() => viewOf(win) === 'login', 'login view');
   check('cold boot lands on the login view', viewOf(win) === 'login', viewOf(win));
-  check('login screen has a key field', !!win.document.getElementById('akey'));
-  check('login screen carries no explanation copy', !/hashed|OTP|SMS|endpoint|probe/i.test(text(win)), text(win).slice(0, 120));
-  check('no OTP tab or device-key tab', !/Access key|Send OTP/i.test(text(win)));
+  check('login screen asks for a mobile number', !!win.document.getElementById('phone'));
+  check('login screen offers both ways in', /Mobile/.test(text(win)) && /Access key/.test(text(win)), text(win).slice(0, 120));
+  check('login screen carries no implementation copy', !/hashed|endpoint|probe/i.test(text(win)), text(win).slice(0, 120));
 
-  console.log('\n── 2. JSON-only sign in ───────────────────────────────────────');
+  console.log('\n── 1b. phone + OTP ────────────────────────────────────────────');
+  /* wrong number first */
+  win.document.getElementById('phone').value = '12345';
+  click(win, 'otp-send');
+  await waitFor(() => /10-digit/.test(win.document.getElementById('phoneErr').textContent), 'phone error');
+  check('short number rejected before any SMS is sent', true);
+
+  win.document.getElementById('phone').value = '9876543210';
+  click(win, 'otp-send');
+  await waitFor(() => !!win.document.querySelector('.otpbox'), 'otp boxes');
+  check('a valid number opens the six-box code screen', win.document.querySelectorAll('.otpbox').length === 6);
+  const devCode = (win.document.querySelector('.dev-chip b') || {}).textContent || '';
+  check('dev build shows the code it would have sent', /^\d{6}$/.test(devCode), devCode);
+
+  /* wrong code */
+  const boxes = Array.from(win.document.querySelectorAll('.otpbox'));
+  const wrong = devCode === '000000' ? '111111' : '000000';
+  boxes.forEach((b, i) => {
+    b.value = wrong[i];
+    b.dispatchEvent(new win.Event('input', { bubbles: true }));
+  });
+  click(win, 'otp-verify');
+  await waitFor(() => /not right/i.test(win.document.getElementById('otpErr').textContent), 'bad code error');
+  check('a wrong code is refused', true);
+
+  /* right code */
+  const boxes2 = Array.from(win.document.querySelectorAll('.otpbox'));
+  boxes2.forEach((b, i) => {
+    b.value = devCode[i];
+    b.dispatchEvent(new win.Event('input', { bubbles: true }));
+  });
+  check('typing six digits fills six boxes', boxes2.filter((b) => b.value).length === 6);
+  click(win, 'otp-verify');
+  await waitFor(() => viewOf(win) === 'claim', 'claim view after otp');
+  check('the right code signs in and lands on Offers', viewOf(win) === 'claim', viewOf(win));
+  check('session belongs to the phone number', win.Core.S.user && win.Core.S.user.phone === '9876543210', JSON.stringify(win.Core.S.user));
+
+  const otpMe = await win.Core.API.me();
+  check('server agrees the OTP session is live', otpMe.signedIn === true && otpMe.user.phone === '9876543210', JSON.stringify(otpMe).slice(0, 120));
+
+  await win.Core.API.logout();
+  win.location.hash = '#login';
+  await waitFor(() => viewOf(win) === 'login', 'back to login');
+  check('signing out returns to the code screen', viewOf(win) === 'login');
+
+  console.log('\n── 2. access-key sign in ──────────────────────────────────────');
+  win.document.querySelector('[data-act="auth-mode"][data-m="key"]').click();
+  await waitFor(() => !!win.document.getElementById('akey'), 'key field');
+  check('the key tab exposes the key field', !!win.document.getElementById('akey'));
   win.document.getElementById('akey').value = 'nope';
   click(win, 'key-login');
   await waitFor(() => /SWG-XXXX-XXXX-XXXX/.test(win.document.getElementById('keyErr').textContent), 'format error');

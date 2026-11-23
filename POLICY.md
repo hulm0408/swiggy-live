@@ -7,7 +7,7 @@ The useful part of a project like this is the line around it. This file records 
 | | |
 |---|---|
 | **Public catalogue surface** — restaurant lists, search, menus, suggestions, images | read-only, what an unauthenticated visitor sees, through one proxy with a two-minute cache |
-| **Local sign-in** — an access key (`SWG-XXXX-XXXX-XXXX`) minted on this server | the session belongs to this app, not to any third party |
+| **Local sign-in** — a mobile number + OTP, or an access key (`SWG-XXXX-XXXX-XXXX`) | the session belongs to this app, not to any third party. The number is the one the person typing it can receive a code on |
 | **Key administration** — an admin key can mint, list and revoke keys | so a demo can have a few guests without each of them needing a phone |
 | **Daily offer claims** — one per slot per IST day, per key, kept server-side | a coupon simulation; nothing is claimed upstream |
 | **Cart, bill, checkout, tracking, order history** | simulated in the browser; no order is ever placed |
@@ -45,6 +45,7 @@ No password forms, no "verify your Swiggy account" flow, no pretending the build
 | Boundary | Enforcement |
 |---|---|
 | No session importer | `/api/auth/login` accepts only `SWG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}`; there is no other credential route |
+| OTP codes are not guessable or replayable | 6 digits from `crypto.randomInt`, stored as `sha256(code+salt)`, single use, 5-minute life, 5 attempts, per-phone and per-IP hourly limits |
 | Keys are not guessable | 12 chars from a 32-symbol alphabet (no `0/O/1/I`), generated with `crypto.randomInt` |
 | Keys are not stored in the clear | `sha256` only; the plaintext exists in exactly one place — the response that hands it to its owner |
 | Keys are revocable | per-key revoke; revoked → `BAD_KEY`; sessions are dropped with the key |

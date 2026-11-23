@@ -42,6 +42,26 @@ let BOOT_GENERATED_KEY = null;
    trusting that nobody kept a copy of the file. */
 const BURNED_KEYS = ['SWG-WZEY-9089-69ZS'];
 
+/* ---------------- phone + OTP login ----------------
+ * A real code, sent through whatever provider is configured. If none is, the code
+ * goes to the console and (only then) back to the client, so the flow is testable
+ * without an SMS bill. Set AUTH_DEV_MODE=0 to refuse that echo in production.
+ *
+ *   TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_FROM (or TWILIO_MESSAGING_SERVICE_SID)
+ *   MSG91_AUTH_KEY + MSG91_TEMPLATE_ID
+ *   FAST2SMS_API_KEY [+ FAST2SMS_ROUTE]
+ *   VONAGE_API_KEY + VONAGE_API_SECRET + VONAGE_FROM
+ *   SMS_WEBHOOK_URL      -> POST { phone, otp, ttl_seconds, message }  [+ SMS_WEBHOOK_TOKEN]
+ */
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_LEN = 6;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_PER_HOUR_PHONE = 5;
+const OTP_PER_HOUR_IP = 12;
+const OTP_RESEND_SEC = 30;
+const APP_NAME = process.env.APP_NAME || 'swiggy-live';
+const DEV_MODE = String(process.env.AUTH_DEV_MODE || '1') !== '0';
+
 /* ---------------- claim slots ----------------
  * One claim per slot per IST calendar day, per access key. Windows are IST.
  */
@@ -52,11 +72,12 @@ const CLAIM_SLOTS = {
 };
 
 /* ---------------- persistence ---------------- */
-let db = { users: {}, sessions: {}, requests: {}, device_keys: {}, access_keys: {}, claims: {} };
+let db = { users: {}, sessions: {}, requests: {}, device_keys: {}, access_keys: {}, claims: {}, otp: {} };
 try {
   db = Object.assign(db, JSON.parse(fs.readFileSync(STORE, 'utf8')));
 } catch (e) {}
 db.access_keys = db.access_keys || {};
+db.otp = db.otp || {};
 db.claims = db.claims || {};
 
 let flushT;
@@ -198,6 +219,115 @@ function seedAccessKeys() {
   return added + (BOOT_GENERATED_KEY ? 1 : 0);
 }
 
+/* ---------------- sms ----------------
+ * Returns { provider } for the first configured channel, or provider:null for the
+ * console fallback. Nothing here is required for the app to boot.
+ */
+function smsConfig() {
+  const e = process.env;
+  if (e.TWILIO_ACCOUNT_SID && e.TWILIO_AUTH_TOKEN && (e.TWILIO_FROM || e.TWILIO_MESSAGING_SERVICE_SID)) return { provider: 'twilio' };
+  if (e.MSG91_AUTH_KEY && e.MSG91_TEMPLATE_ID) return { provider: 'msg91' };
+  if (e.FAST2SMS_API_KEY) return { provider: 'fast2sms' };
+  if (e.VONAGE_API_KEY && e.VONAGE_API_SECRET && e.VONAGE_FROM) return { provider: 'vonage' };
+  if (e.SMS_WEBHOOK_URL) return { provider: 'webhook' };
+  return { provider: null };
+}
+
+function smsText(code) {
+  return `${code} is your ${APP_NAME} login code. Valid for 5 minutes. Do not share it with anyone.`;
+}
+
+async function sendSms(phone, code) {
+  const e = process.env;
+  const { provider } = smsConfig();
+  const text = smsText(code);
+
+  if (!provider) {
+    console.log(`
+  ── OTP ─────────────────────────────
+   +91 ${phone}  →  ${code}
+   valid 5 min · console mode (no SMS provider configured)
+  ────────────────────────────────────
+`);
+    return DEV_MODE
+      ? { ok: true, channel: 'console' }
+      : { ok: false, error: 'SMS_NOT_CONFIGURED' };
+  }
+
+  try {
+    if (provider === 'twilio') {
+      const sid = e.TWILIO_ACCOUNT_SID;
+      const form = new URLSearchParams({ To: '+91' + phone, Body: text });
+      if (e.TWILIO_MESSAGING_SERVICE_SID) form.set('MessagingServiceSid', e.TWILIO_MESSAGING_SERVICE_SID);
+      else form.set('From', e.TWILIO_FROM);
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(sid + ':' + e.TWILIO_AUTH_TOKEN).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: form,
+      });
+      if (!r.ok) throw new Error('twilio ' + r.status + ' ' + (await r.text()).slice(0, 160));
+      return { ok: true, channel: 'twilio' };
+    }
+
+    if (provider === 'msg91') {
+      /* v5 OTP flow — pass the code we generated so our own store stays the source of truth */
+      const q = new URLSearchParams({ template_id: e.MSG91_TEMPLATE_ID, mobile: '91' + phone, authkey: e.MSG91_AUTH_KEY, otp: code });
+      if (e.MSG91_SENDER) q.set('sender', e.MSG91_SENDER);
+      const r = await fetch('https://control.msg91.com/api/v5/otp?' + q.toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const body = await r.text();
+      if (!r.ok || /"type"\s*:\s*"error"/i.test(body)) throw new Error('msg91 ' + r.status + ' ' + body.slice(0, 160));
+      return { ok: true, channel: 'msg91' };
+    }
+
+    if (provider === 'fast2sms') {
+      const r = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+        method: 'POST',
+        headers: { authorization: e.FAST2SMS_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route: e.FAST2SMS_ROUTE || 'q', message: text, language: 'english', flash: 0, numbers: phone }),
+      });
+      const body = await r.text();
+      if (!r.ok) throw new Error('fast2sms ' + r.status + ' ' + body.slice(0, 160));
+      return { ok: true, channel: 'fast2sms' };
+    }
+
+    if (provider === 'vonage') {
+      const q = new URLSearchParams({ api_key: e.VONAGE_API_KEY, api_secret: e.VONAGE_API_SECRET, to: '91' + phone, from: e.VONAGE_FROM, text });
+      const r = await fetch('https://rest.nexmo.com/sms/json?' + q.toString(), { method: 'POST' });
+      const body = await r.json().catch(() => ({}));
+      const msg = body && body.messages && body.messages[0];
+      if (!r.ok || !msg || String(msg.status) !== '0') throw new Error('vonage ' + r.status + ' ' + JSON.stringify(msg || body).slice(0, 160));
+      return { ok: true, channel: 'vonage' };
+    }
+
+    /* generic webhook — your own gateway decides how to deliver it */
+    const r = await fetch(e.SMS_WEBHOOK_URL, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, e.SMS_WEBHOOK_TOKEN ? { Authorization: 'Bearer ' + e.SMS_WEBHOOK_TOKEN } : {}),
+      body: JSON.stringify({ phone, otp: code, ttl_seconds: Math.round(OTP_TTL_MS / 1000), message: text }),
+    });
+    if (!r.ok) throw new Error('webhook ' + r.status);
+    return { ok: true, channel: 'webhook' };
+  } catch (err) {
+    console.error('[auth] sms failed:', err.message);
+    return { ok: false, error: 'SMS_FAILED', detail: String(err.message || err).slice(0, 160) };
+  }
+}
+
+/* 9876543210 | +919876543210 | 919876543210 | 098765... -> 9876543210 */
+function normalisePhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('91')) return d.slice(2);
+  if (d.length === 11 && d.startsWith('0')) return d.slice(1);
+  return d;
+}
+
+function validPhone(p) {
+  return /^[6-9]\d{9}$/.test(p);
+}
+
 function parseCookies(req) {
   const out = {};
   for (const part of String(req.headers.cookie || '').split(';')) {
@@ -242,6 +372,123 @@ async function handle(req, res, url, send) {
     if (sess.seen - sess.iat > 24 * 3600_000) sess.exp = now + SESSION_TTL_MS; // roll long sessions
     persist();
     return send(res, 200, { ok: true, signedIn: true, user: sessionUser(sess), claims: claimsFor(sess) });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * phone + OTP
+   * ------------------------------------------------------------------ */
+  if (route === '/api/auth/otp/status' && req.method === 'GET') {
+    const cfg = smsConfig();
+    return send(res, 200, {
+      ok: true,
+      configured: !!cfg.provider,
+      provider: cfg.provider || 'console',
+      devEcho: !cfg.provider && DEV_MODE,
+      resendAfter: OTP_RESEND_SEC,
+      ttlSeconds: Math.round(OTP_TTL_MS / 1000),
+    });
+  }
+
+  if (route === '/api/auth/otp/request' && req.method === 'POST') {
+    const body = (await readJson(req)) || {};
+    const phone = normalisePhone(body.phone);
+    if (!validPhone(phone)) {
+      return send(res, 400, { ok: false, error: 'BAD_PHONE', message: 'Enter a valid 10-digit Indian mobile number.' });
+    }
+    if (!rateOk('ip', ip, OTP_PER_HOUR_IP)) return send(res, 429, { ok: false, error: 'RATE_IP', message: 'Too many codes from this connection. Try again later.' });
+    if (!rateOk('phone', phone, OTP_PER_HOUR_PHONE)) return send(res, 429, { ok: false, error: 'RATE_PHONE', message: 'Too many codes for this number. Try again in an hour.' });
+
+    /* retire this number's older codes: newest wins */
+    for (const [id, r] of Object.entries(db.otp)) {
+      if (r.phone === phone) delete db.otp[id];
+    }
+    /* housekeeping */
+    for (const [id, r] of Object.entries(db.otp)) {
+      if (r.exp < now || r.attempts >= OTP_MAX_ATTEMPTS) delete db.otp[id];
+    }
+
+    let code = '';
+    for (let i = 0; i < OTP_LEN; i++) code += crypto.randomInt(0, 10);
+    const salt = rid(12);
+    const requestId = rid(18);
+    db.otp[requestId] = {
+      phone,
+      salt,
+      hash: sha(code + salt),
+      exp: now + OTP_TTL_MS,
+      attempts: 0,
+      created: now,
+      ip,
+    };
+    persist();
+
+    const sent = await sendSms(phone, code);
+    if (!sent.ok) {
+      delete db.otp[requestId];
+      persist();
+      return send(res, 502, {
+        ok: false,
+        error: sent.error || 'SMS_FAILED',
+        message:
+          sent.error === 'SMS_NOT_CONFIGURED'
+            ? 'No SMS provider is configured on this server. Set one of TWILIO_*, MSG91_*, FAST2SMS_API_KEY, VONAGE_* or SMS_WEBHOOK_URL.'
+            : 'The SMS could not be sent. Check the provider credentials in the server log.',
+      });
+    }
+
+    return send(res, 200, {
+      ok: true,
+      requestId,
+      phone,
+      masked: '+91 ' + phone.slice(0, 5) + ' ' + phone.slice(5),
+      expiresIn: Math.round(OTP_TTL_MS / 1000),
+      resendAfter: OTP_RESEND_SEC,
+      channel: sent.channel,
+      ...(sent.channel === 'console' ? { devCode: code, message: 'Dev mode — no SMS provider configured, the code is printed on the server console.' } : {}),
+    });
+  }
+
+  if (route === '/api/auth/otp/verify' && req.method === 'POST') {
+    const body = (await readJson(req)) || {};
+    const requestId = String(body.requestId || '');
+    const code = String(body.code || '').replace(/\D/g, '');
+    const rec = db.otp[requestId];
+
+    if (!rec) return send(res, 400, { ok: false, error: 'NO_REQUEST', message: 'That code has already been used or has expired. Send a new one.' });
+    if (rec.exp < now) {
+      delete db.otp[requestId];
+      persist();
+      return send(res, 400, { ok: false, error: 'EXPIRED', message: 'That code expired. Send a new one.' });
+    }
+    if (rec.attempts >= OTP_MAX_ATTEMPTS) {
+      delete db.otp[requestId];
+      persist();
+      return send(res, 429, { ok: false, error: 'TOO_MANY_TRIES', message: 'Too many wrong attempts. Send a new code.' });
+    }
+
+    rec.attempts += 1;
+    if (code.length !== OTP_LEN || sha(code + rec.salt) !== rec.hash) {
+      const left = OTP_MAX_ATTEMPTS - rec.attempts;
+      persist();
+      return send(res, 401, {
+        ok: false,
+        error: 'BAD_CODE',
+        message: left > 0 ? 'That code is not right.' : 'Too many wrong attempts. Send a new code.',
+        attemptsLeft: Math.max(0, left),
+      });
+    }
+
+    delete db.otp[requestId]; // single use
+    const phone = rec.phone;
+    const user = (db.users[phone] = db.users[phone] || { phone, since: now, logins: 0 });
+    user.logins = (user.logins || 0) + 1;
+    user.lastLogin = now;
+
+    const sid = rid(32);
+    db.sessions[sid] = { phone, via: 'otp', iat: now, seen: now, exp: now + SESSION_TTL_MS, ip };
+    persist();
+    setSessionCookie(res, sid, SESSION_TTL_MS / 1000);
+    return send(res, 200, { ok: true, signedIn: true, user: publicUser(user), claims: claimsFor(db.sessions[sid]) });
   }
 
   /* ------------------------------------------------------------------ *
