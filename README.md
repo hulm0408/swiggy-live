@@ -16,9 +16,9 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![api](docs/api-console.png) |
 
-| Sign in | OTP | Signed in |
+| Sign in | Access key | Key minted |
 |---|---|---|
-| ![sign in](docs/auth-phone.png) | ![otp](docs/auth-otp.png) | ![signed in](docs/auth-signed-in.png) |
+| ![sign in](docs/auth-phone.png) | ![access key](docs/auth-key.png) | ![minted](docs/auth-key-minted.png) |
 
 | Dark |
 |---|
@@ -72,11 +72,27 @@ POST /api/auth/otp/request   { phone: "9876543210" }
      → { ok, requestId, expiresIn: 300, resendAfter: 30, devCode? }
 
 POST /api/auth/otp/verify    { requestId, code: "123456" }
-     → { ok, signedIn: true, user } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
+     → { ok, signedIn: true, user, deviceKey } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
+
+POST /api/auth/key/login     { key: "SWG-DVC-XXXX-XXXX-XXXX" }   → session, no SMS needed
+GET  /api/auth/keys          → the keys minted for this number (authed)
+POST /api/auth/key/revoke    { id }                               → kill one
 
 GET  /api/auth/me            → { ok, signedIn, user }
 POST /api/auth/logout        → clears the cookie, drops the session
 ```
+
+### Device keys — the no-SMS path
+
+A **device key** is minted by the server the moment a number verifies an OTP, and shown to the client exactly once:
+
+```
+SWG-DVC-VZAZ-AZK6-JYV8
+```
+
+Paste it on any device and you're in — no code, no SMS bill. It is bound to the number that earned it, hashed at rest (`sha256`, the key itself is never stored), count-tracked, and revocable from the Orders screen. Alphabet skips `0/O/1/I`, so a key can be read off a screen without ambiguity.
+
+What it deliberately is **not**: a session importer. There is no endpoint that accepts a `{mobile, token, sid, tid, deviceId}` blob — post one and the route answers `BAD_KEY_FORMAT`. A key can only exist because a number proved control of itself, so the box cannot be pointed at somebody else's session.
 
 **Posture**
 
@@ -89,6 +105,8 @@ POST /api/auth/logout        → clears the cookie, drops the session
 | Session | opaque 32-byte id held server-side, delivered as an **HttpOnly** cookie — no token in JS, nothing for a script to read |
 | Lifetime | 30 days, rolling when used |
 | Storage | `data/auth.json`, git-ignored, atomic writes |
+
+**Key rules.** One key, one number. Minting requires a fresh OTP. Keys are listed masked (`device · 2ec…`) with use counts and last-used time, and revoking one kills it immediately — a revoked key returns `BAD_KEY` on the next attempt.
 
 **Sending real SMS.** Set `SMS_WEBHOOK_URL` (and optionally `SMS_WEBHOOK_TOKEN`) and the module POSTs `{ phone, otp, ttl_seconds }` to your gateway instead of printing to the console:
 

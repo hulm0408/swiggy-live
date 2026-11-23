@@ -26,10 +26,11 @@ const IP_PER_HOUR = 12;
 
 const DEV_MODE = process.env.AUTH_DEV_MODE !== '0' && !process.env.SMS_WEBHOOK_URL;
 const COOKIE = 'swg_sid';
+const KEY_PREFIX = 'SWG-DVC';
 const IS_SECURE = String(process.env.COOKIE_SECURE || '') === '1';
 
 /* ---------------- persistence ---------------- */
-let db = { users: {}, sessions: {}, requests: {} };
+let db = { users: {}, sessions: {}, requests: {}, device_keys: {} };
 try {
   db = Object.assign(db, JSON.parse(fs.readFileSync(STORE, 'utf8')));
 } catch (e) {}
@@ -212,7 +213,60 @@ async function handle(req, res, url, send) {
     user.lastLogin = now;
     persist();
     setSessionCookie(res, sid, SESSION_TTL_MS / 1000);
-    return send(res, 200, { ok: true, signedIn: true, user: publicUser(user) });
+
+    /* a device key can only exist because this number just proved itself */
+    let deviceKey = null;
+    if (body.remember !== false) {
+      deviceKey = mintDeviceKey(r.phone, (body.label || 'device').slice(0, 24));
+    }
+    return send(res, 200, { ok: true, signedIn: true, user: publicUser(user), deviceKey });
+  }
+
+  /* step 2b — sign in with a device key that this server minted after OTP */
+  if (route === '/api/auth/key/login' && req.method === 'POST') {
+    const body = (await readJson(req)) || {};
+    const raw = String(body.key || '').trim().toUpperCase();
+    if (!rateOk('ip', ip, IP_PER_HOUR)) return send(res, 429, { ok: false, error: 'RATE_IP', message: 'Too many attempts from this connection.' });
+    if (!/^SWG-DVC(-[A-Z0-9]{4}){3}$/.test(raw)) {
+      return send(res, 400, { ok: false, error: 'BAD_KEY_FORMAT', message: 'That does not look like a device key (SWG-DVC-XXXX-XXXX-XXXX).' });
+    }
+    const rec = db.device_keys[sha(raw)];
+    if (!rec || rec.revoked) return send(res, 401, { ok: false, error: 'BAD_KEY', message: 'Unknown or revoked key.' });
+
+    const sid = rid(32);
+    db.sessions[sid] = { phone: rec.phone, iat: now, seen: now, exp: now + SESSION_TTL_MS, ip, via: 'device_key' };
+    rec.lastUsed = now;
+    rec.uses = (rec.uses || 0) + 1;
+    const user = (db.users[rec.phone] = db.users[rec.phone] || { phone: rec.phone, since: now, logins: 0 });
+    user.logins = (user.logins || 0) + 1;
+    user.lastLogin = now;
+    persist();
+    setSessionCookie(res, sid, SESSION_TTL_MS / 1000);
+    return send(res, 200, { ok: true, signedIn: true, user: publicUser(user), via: 'device_key' });
+  }
+
+  /* list + revoke device keys (must already be signed in) */
+  if (route === '/api/auth/keys' && req.method === 'GET') {
+    const me = signedIn(req);
+    if (!me) return send(res, 401, { ok: false, error: 'NO_SESSION' });
+    const keys = Object.entries(db.device_keys)
+      .filter(([, k]) => k.phone === me.phone && !k.revoked)
+      .map(([hash, k]) => ({ id: hash.slice(0, 12), label: k.label, created: k.created, lastUsed: k.lastUsed || null, uses: k.uses || 0 }));
+    return send(res, 200, { ok: true, keys });
+  }
+  if (route === '/api/auth/key/revoke' && req.method === 'POST') {
+    const me = signedIn(req);
+    if (!me) return send(res, 401, { ok: false, error: 'NO_SESSION' });
+    const body = (await readJson(req)) || {};
+    const id = String(body.id || '');
+    for (const [hash, k] of Object.entries(db.device_keys)) {
+      if (hash.slice(0, 12) === id && k.phone === me.phone) {
+        k.revoked = true;
+        persist();
+        return send(res, 200, { ok: true });
+      }
+    }
+    return send(res, 404, { ok: false, error: 'NOT_FOUND' });
   }
 
   /* out */
@@ -227,6 +281,27 @@ async function handle(req, res, url, send) {
   }
 
   return false;
+}
+
+function mintDeviceKey(phone, label) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
+  const groups = [];
+  for (let g = 0; g < 3; g++) {
+    let chunk = '';
+    for (let i = 0; i < 4; i++) chunk += alphabet[crypto.randomInt(0, alphabet.length)];
+    groups.push(chunk);
+  }
+  const key = KEY_PREFIX + '-' + groups.join('-');
+  db.device_keys[sha(key)] = { phone, label, created: Date.now(), uses: 0, revoked: false };
+  persist();
+  return key;
+}
+
+function signedIn(req) {
+  const sid = parseCookies(req)[COOKIE];
+  const sess = sid && db.sessions[sid];
+  if (!sess || sess.exp < Date.now()) return null;
+  return db.users[sess.phone] || { phone: sess.phone };
 }
 
 function publicUser(u) {

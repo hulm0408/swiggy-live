@@ -826,3 +826,32 @@ img { display: block; }
 .dev-chip b { font-family: var(--font-head); font-size: 12.5px; letter-spacing: 0.08em; }
 .av-btn.signed { background: var(--grad); color: #fff; border: 0; box-shadow: var(--glow); }
 .mini.ghost { background: var(--bg-input); color: var(--muted); border: 1px solid var(--border-strong); box-shadow: none; }
+
+/* ---------------- device keys ---------------- */
+.authseg { margin: 0 0 18px; }
+.keybox {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px; font-weight: 700; letter-spacing: 0.08em; color: var(--blue-deep);
+  background: var(--bg-active); border: 1.5px dashed rgba(56, 189, 248, 0.55);
+  border-radius: var(--r-md); padding: 16px 12px; margin: 6px 0 14px;
+  word-break: break-all; user-select: all;
+}
+[data-theme='dark'] .keybox { color: var(--sky); }
+.keyinput {
+  display: flex; align-items: center; height: 52px; border-radius: var(--r-md);
+  background: var(--bg-input); border: 1.5px solid var(--border); overflow: hidden; margin-bottom: 6px;
+}
+.keyinput input {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 0 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--text); text-transform: uppercase;
+}
+.keyinput input::placeholder { color: var(--faint); font-weight: 600; letter-spacing: 0.04em; }
+.keyrow {
+  display: flex; align-items: center; gap: 10px; padding: 12px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow);
+}
+.keyrow .kr-l { flex: 1; min-width: 0; }
+.keyrow b { display: block; font-family: var(--font-head); font-size: 12.5px; font-weight: 800; }
+.keyrow span { font-size: 10.5px; color: var(--faint); }
+.keyrow .revoke { font-size: 10.5px; font-weight: 900; color: var(--red-ink); background: var(--red-soft); padding: 5px 10px; border-radius: var(--r-full); }

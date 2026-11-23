@@ -580,31 +580,74 @@
   /* ---------------------------------------------------------------- AUTH */
   RENDERERS.auth = async function () {
     const a = S.auth;
-    const step = a.step;
-    const secsLeft = Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000));
+    const mode = a.mode || 'otp';
 
     const header = `<div class="authbar">
       <button class="iconbtn" data-act="auth-back">${icon('back', 20)}</button>
-      <b>${step === 'otp' ? 'Verify number' : 'Sign in'}</b>
+      <b>${a.step === 'otp' ? 'Verify number' : a.step === 'minted' ? 'Device key' : 'Sign in'}</b>
     </div>`;
 
-    if (step === 'phone') {
+    /* --- key just minted: show it once --- */
+    if (a.step === 'minted') {
       return `${header}
       <div class="auth-wrap">
         <div class="auth-card">
-          <div class="auth-icon">${icon('user', 26)}</div>
-          <h1>Sign in with your number</h1>
-          <p>We send a 6-digit code to the number you own. No passwords, nothing stored on the device.</p>
-          <label class="field-label">Mobile number</label>
-          <div class="phone-field">
-            <span class="pf-cc">+91</span>
-            <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="98765 43210"
-              value="${esc(a.phone || '')}" autocomplete="tel-national">
+          <div class="auth-icon">${icon('check', 26)}</div>
+          <h1>Device key created</h1>
+          <p>This key signs you in on this device without an SMS. It works only for <b>+91 ${esc(a.phone || '')}</b> and only because you verified that number just now.</p>
+          <div class="keybox" id="keybox">${esc(a.deviceKey)}</div>
+          <button class="btn ghost wide" data-act="copy-key" style="margin-bottom:10px">Copy key</button>
+          <button class="btn solid wide auth-cta" data-act="key-done">Continue</button>
+          <div class="auth-foot"><span class="lockline">${icon('check', 12)} Shown once · revocable from Orders</span></div>
+        </div>
+      </div>`;
+    }
+
+    /* --- OTP step --- */
+    if (a.step === 'otp') {
+      return `${header}
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <div class="auth-icon">${icon('check', 26)}</div>
+          <h1>Enter the code</h1>
+          <p>Sent to <b>+91 ${esc(a.phone || '')}</b>. It expires in ${Math.max(0, Math.ceil((a.expiresAt - Date.now()) / 60000))} min.</p>
+          ${a.devCode ? `<div class="dev-chip">${icon('bolt', 12)} Dev mode · code <b>${esc(a.devCode)}</b> (no SMS configured)</div>` : ''}
+          <div class="otp-row" id="otprow">
+            ${[0, 1, 2, 3, 4, 5].map((i) => `<input class="otpbox" data-i="${i}" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}">`).join('')}
           </div>
-          <button class="btn solid wide auth-cta" data-act="otp-send" id="otpSendBtn">Send OTP</button>
+          <div class="auth-error" id="otpErr"></div>
+          <button class="btn solid wide auth-cta" data-act="otp-verify">Verify &amp; sign in</button>
           <div class="auth-foot">
-            <span class="lockline">${icon('check', 12)} Code hashed at rest · 5 min life · single use</span>
+            <button class="linkbtn" data-act="otp-resend" ${Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000)) > 0 ? 'disabled' : ''}>
+              ${Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000)) > 0 ? `Resend in ${Math.ceil((a.resendAt - Date.now()) / 1000)}s` : 'Resend code'}
+            </button>
+            <button class="linkbtn" data-act="auth-change">Change number</button>
           </div>
+        </div>
+      </div>`;
+    }
+
+    /* --- phone / key screens, with the mode switch --- */
+    const seg = `<div class="searchtabs authseg">
+      <button class="stab ${mode === 'otp' ? 'on' : ''}" data-act="auth-mode" data-m="otp">OTP</button>
+      <button class="stab ${mode === 'key' ? 'on' : ''}" data-act="auth-mode" data-m="key">Access key</button>
+    </div>`;
+
+    if (mode === 'key') {
+      return `${header}
+      <div class="auth-wrap">
+        <div class="auth-card">
+          ${seg}
+          <div class="auth-icon">${icon('bolt', 26)}</div>
+          <h1>Sign in with a device key</h1>
+          <p>A key your own server minted for this number after an OTP. One key, one number — no code needed.</p>
+          <label class="field-label">Device key</label>
+          <div class="keyinput">
+            <input id="dkey" spellcheck="false" autocomplete="off" placeholder="SWG-DVC-XXXX-XXXX-XXXX">
+          </div>
+          <div class="auth-error" id="keyErr"></div>
+          <button class="btn solid wide auth-cta" data-act="key-login">Sign in</button>
+          <div class="auth-foot"><span class="lockline">${icon('check', 12)} Keys are minted after OTP only · hash stored, never the key</span></div>
         </div>
       </div>`;
     }
@@ -612,21 +655,18 @@
     return `${header}
     <div class="auth-wrap">
       <div class="auth-card">
-        <div class="auth-icon">${icon('check', 26)}</div>
-        <h1>Enter the code</h1>
-        <p>Sent to <b>+91 ${esc(a.phone || '')}</b>. It expires in ${Math.ceil((a.expiresAt - Date.now()) / 1000) > 0 ? Math.ceil((a.expiresAt - Date.now()) / 60000) : 0} min.</p>
-        ${a.devCode ? `<div class="dev-chip">${icon('bolt', 12)} Dev mode · code <b>${esc(a.devCode)}</b> (no SMS configured)</div>` : ''}
-        <div class="otp-row" id="otprow">
-          ${[0, 1, 2, 3, 4, 5].map((i) => `<input class="otpbox" data-i="${i}" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}">`).join('')}
+        ${seg}
+        <div class="auth-icon">${icon('user', 26)}</div>
+        <h1>Sign in with your number</h1>
+        <p>We send a 6-digit code to the number you own. No passwords, nothing stored on the device.</p>
+        <label class="field-label">Mobile number</label>
+        <div class="phone-field">
+          <span class="pf-cc">+91</span>
+          <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="98765 43210"
+            value="${esc(a.phone || '')}" autocomplete="tel-national">
         </div>
-        <div class="auth-error" id="otpErr"></div>
-        <button class="btn solid wide auth-cta" data-act="otp-verify">Verify &amp; sign in</button>
-        <div class="auth-foot">
-          <button class="linkbtn" data-act="otp-resend" ${secsLeft > 0 ? 'disabled' : ''}>
-            ${secsLeft > 0 ? `Resend in ${secsLeft}s` : 'Resend code'}
-          </button>
-          <button class="linkbtn" data-act="auth-change">Change number</button>
-        </div>
+        <button class="btn solid wide auth-cta" data-act="otp-send" id="otpSendBtn">Send OTP</button>
+        <div class="auth-foot"><span class="lockline">${icon('check', 12)} Code hashed at rest · 5 min life · single use</span></div>
       </div>
     </div>`;
   };
@@ -635,6 +675,11 @@
   RENDERERS.account = async function () {
     S.tab = 'orders';
     const u = S.user;
+    let keys = [];
+    if (u) {
+      const k = await API.keys();
+      keys = (k && k.keys) || [];
+    }
     const profile = u
       ? `<div class="acct-top">
           <div class="av-btn big signed">${icon('user', 24)}</div>
@@ -664,6 +709,22 @@
       <div class="arow">${icon('one', 17)}<div><b>Swiggy One</b><span>Not a member</span></div></div>
       <div class="arow">${icon('help', 17)}<div><b>Help</b><span>Support is mocked</span></div></div>
     </div>
+    ${
+      u
+        ? `${sectionHead('bolt', 'Device keys', keys.length)}
+          <div class="acct-list">
+            ${keys
+              .map(
+                (k) => `<div class="keyrow">
+              <div class="kr-l"><b>${esc(k.label || 'device')} · ${esc(k.id)}</b>
+                <span>used ${k.uses || 0}×${k.lastUsed ? ' · last ' + timeAgo(k.lastUsed) : ''}</span></div>
+              <button class="revoke" data-act="revoke-key" data-id="${esc(k.id)}">Revoke</button>
+            </div>`
+              )
+              .join('') || '<div class="banner">No device keys yet. Sign in with OTP once and one is minted.</div>'}
+          </div>`
+        : ''
+    }
     ${
       S.orders.length
         ? `${sectionHead('clock', 'Recent orders', S.orders.length)}
@@ -795,8 +856,46 @@
 
     /* ---- auth ---- */
     'go-auth': () => {
-      S.auth = { step: 'phone', requestId: null, devCode: null, phone: S.auth.phone || '', resendAt: 0 };
+      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: S.auth.phone || '', resendAt: 0 };
       go('auth', {});
+    },
+    'auth-mode': (el) => {
+      S.auth.mode = el.dataset.m;
+      S.auth.step = 'phone';
+      C.render();
+    },
+    'key-login': async () => {
+      const el = $('#dkey');
+      const key = ((el && el.value) || '').trim().toUpperCase();
+      const err = $('#keyErr');
+      if (err) err.textContent = '';
+      if (!key) {
+        if (err) err.textContent = 'Paste your device key.';
+        return;
+      }
+      const r = await API.keyLogin(key);
+      if (!r.ok) {
+        if (err) err.textContent = r.message || 'That key was not accepted.';
+        return;
+      }
+      S.user = r.user;
+      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
+      toast('Signed in as +91 ' + r.user.phone);
+      reset('account');
+    },
+    'copy-key': async () => {
+      const box = $('#keybox');
+      const text = box ? box.textContent.trim() : S.auth.deviceKey || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('Key copied');
+      } catch (e) {
+        toast('Copy blocked — select it by hand');
+      }
+    },
+    'key-done': () => {
+      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
+      reset('account');
     },
     'auth-back': () => back(),
     'auth-change': () => {
@@ -855,9 +954,19 @@
         return;
       }
       S.user = r.user;
-      S.auth = { step: 'phone', requestId: null, devCode: null, phone: '', resendAt: 0 };
+      if (r.deviceKey) {
+        S.auth = { step: 'minted', deviceKey: r.deviceKey, phone: r.user.phone };
+        C.render();
+        return;
+      }
+      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
       toast('Signed in as +91 ' + r.user.phone);
       reset('account');
+    },
+    'revoke-key': async (el) => {
+      const r = await API.revokeKey(el.dataset.id);
+      toast(r && r.ok ? 'Key revoked' : 'Could not revoke');
+      C.render();
     },
     'sign-out': async () => {
       await API.logout();

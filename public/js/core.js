@@ -111,6 +111,9 @@ const Core = (function () {
     requestOtp: (phone) => post('/api/auth/otp/request', { phone }),
     verifyOtp: (requestId, code) => post('/api/auth/otp/verify', { requestId, code }),
     logout: () => post('/api/auth/logout', {}),
+    keyLogin: (key) => post('/api/auth/key/login', { key }),
+    keys: () => api('/api/auth/keys', { ttl: 0 }),
+    revokeKey: (id) => post('/api/auth/key/revoke', { id }),
   };
 
   async function post(path, body) {
