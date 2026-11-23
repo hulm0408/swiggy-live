@@ -39,7 +39,7 @@
   <script src="js/core.js"></script>
   <script src="js/views.js"></script>
   <script>
-    (function boot() {
+    (async function boot() {
       const tick = () => {
         const el = document.getElementById('clock');
         if (!el) return;
@@ -50,7 +50,17 @@
       };
       tick();
       setInterval(tick, 20000);
-      Core.refreshUser ? Core.refreshUser().finally(() => Core.render()) : Core.render();
+
+      /* a shared link carries the address, the cart, or a key — read it once */
+      const linked = await Core.Links.consume();
+
+      const me = await Core.refreshUser().catch(() => null);
+      /* a link that names a screen wins; a cart in the link opens the cart even
+         signed out — browsing never needed a key, claiming does */
+      const start =
+        linked.route || (linked.applied === 'cart' ? 'cart' : me ? 'home' : 'login');
+      Core.reset(Core.RENDERERS[start] ? start : 'home');
+
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { Core.closeSheet(); }
       });

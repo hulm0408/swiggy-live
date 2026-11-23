@@ -21,17 +21,6 @@
 
   const fmtEta = (r) => (r.etaText || (r.eta ? r.eta + ' mins' : '')).replace('MINS', 'mins');
 
-  function headerLive(route, r, extra) {
-    const status = r && r.ok ? '200' : r && r.status ? r.status : '—';
-    const ms = r && (r.upstreamMs || r.__ms) ? (r.upstreamMs || r.__ms) + ' ms' : '—';
-    const cached = r && r.cached ? ' · cache hit' : '';
-    return `<div class="prov">
-      <span class="dot-live"></span>
-      <code>GET ${route}</code><b>${status}</b><span>${ms}${cached}</span>${extra ? `<span class="prov-x">${extra}</span>` : ''}
-      <button class="prov-btn" data-act="tab" data-tab="api">map</button>
-    </div>`;
-  }
-
   function appBar() {
     return `<header class="appbar">
       <div class="brand">
@@ -108,21 +97,19 @@
     const r = await API.listing();
     if (!r.ok) return offlineHome(r);
 
-    const city = (r.city || 'lucknow').replace(/^\w/, (c) => c.toUpperCase());
     const chips = (r.chips || []).slice(0, 18);
     const rests = r.restaurants || [];
-    const ms = r.upstreamMs || r.__ms || 0;
 
     return `${locBar()}
     ${searchEntry()}
 
-    <div class="banner-card" data-act="tab" data-tab="api">
-      <div class="bc-icon">${icon('bolt', 20)}</div>
+    <div class="banner-card" data-act="tab" data-tab="claim">
+      <div class="bc-icon">${icon('tag', 20)}</div>
       <div class="bc-text">
-        <div class="bc-title">Live catalog · ${city}</div>
-        <div class="bc-sub">${rests.length} restaurants · 200 OK · ${ms} ms</div>
+        <div class="bc-title">Breakfast and dinner offers</div>
+        <div class="bc-sub">Claim yours for today</div>
       </div>
-      <span class="bc-go">Map ${icon('chev', 13)}</span>
+      <span class="bc-go">Claim ${icon('chev', 13)}</span>
     </div>
 
     <div class="rail" id="chiprail">
@@ -145,26 +132,16 @@
     </div>
 
     ${sectionHead('store', 'Restaurants near ' + esc(here().label), rests.length)}
-    <div class="cards">${rests.map(restoCard).join('')}</div>
-
-    <div class="pad-16">
-      <button class="btn ghost wide" data-act="tab" data-tab="api">Endpoint map — how this feed is fetched</button>
-    </div>
-    <div class="foot-note">Live catalog · ${rests.length} open restaurants near ${esc(here().label)} · data straight off the app's own endpoints</div>`;
+    <div class="cards">${rests.map(restoCard).join('')}</div>`;
   };
 
   function offlineHome(r) {
     const cat = window.CATALOG || { R: [] };
-    const why = r && r.error === 'NO_ROUTE'
-      ? 'This page was opened as a file, so it has no route to the backend.'
-      : 'The edge returned a challenge instead of data.';
+    const why = r && r.error === 'NO_ROUTE' ? 'Check your connection and try again.' : 'Please try again in a moment.';
     return `${locBar()}
     ${searchEntry()}
-    <div class="banner warn">
-      <b>Offline catalog.</b> ${esc(why)} The live build runs on the Node proxy (port 3000) which reaches <code>www.swiggy.com</code>. Everything below is local demo data.
-      ${r && r.status ? `<div class="banner-code">upstream status: ${r.status}${r.retriedAs ? ' (retried as ' + esc(r.retriedAs) + ')' : ''}</div>` : ''}
-    </div>
-    <h2 class="sec-title">Demo restaurants</h2>
+    <div class="banner warn"><b>Restaurants are unavailable right now.</b> ${esc(why)}</div>
+    <h2 class="sec-title">Popular near you</h2>
     <div class="cards">${(cat.R || [])
       .map((x, i) => restoCard({ id: x.id, name: x.name, img: '', offer: x.offer, cuisines: x.cuisines, rating: x.rating, ratingCount: x.ratingCount, etaText: x.time + ' mins', costForTwo: '₹' + x.priceForOne + ' for one', area: x.area, distance: x.distance + ' km', isOpen: true }, i))
       .join('')}</div>`;
@@ -178,7 +155,7 @@
     let results = '';
     if (str) {
       const r = tab === 'DISH' ? await API.search(str, 'DISH') : await API.search(str, 'RESTAURANT');
-      results = r.ok ? renderSearchResults(r, tab, str) : `<div class="banner warn">Search failed — ${esc(r.error || 'error')} ${r.status || ''}</div>`;
+      results = r.ok ? renderSearchResults(r, tab, str) : `<div class="banner warn">No results right now. Try again in a moment.</div>`;
     }
     return `<div class="searchhead">
       <button class="iconbtn" data-act="back">${icon('back', 20)}</button>
@@ -208,7 +185,7 @@
 
     if (tab === 'DISH') {
       const list = (r.dishes || []).filter((d) => !S.veg || d.veg);
-      return `${headerLive('/dapi/restaurants/search/v3 · DISH', r, `${list.length} dishes`)}${tabs}
+      return `${tabs}
       <div class="dishlist">${list
         .map(
           (d) => `<div class="drow" data-act="open-dish-result" data-rest="${d.restId}" data-dish="${d.id}">
@@ -224,9 +201,8 @@
         .join('')}</div>`;
     }
     const list = (r.restaurants || []).filter((x) => !S.veg || x.veg);
-    return `${headerLive('/dapi/restaurants/search/v3 · RESTAURANT', r, `${list.length} restaurants`)}${tabs}
-      <div class="cards">${list.map(restoCard).join('')}</div>
-      <div class="foot-note">${list.length} live results for “${esc(str)}”</div>`;
+    return `${tabs}
+      <div class="cards">${list.map(restoCard).join('')}</div>`;
   }
 
   /* ---------------------------------------------------------------- RESTAURANT */
@@ -236,7 +212,7 @@
     const r = await API.menu(id);
     if (!r.ok) {
       return `<div class="searchhead"><button class="iconbtn" data-act="back">${icon('back', 20)}</button><b>Restaurant</b></div>
-        <div class="banner warn">Menu fetch failed — ${esc(r.error || 'error')} ${r.status || ''}${r.retriedAs ? ' · retried as ' + esc(r.retriedAs) : ''}</div>`;
+        <div class="banner warn">This menu is unavailable right now.</div>`;
     }
     MENUS[id] = r;
     const rest = r.restaurant || {};
@@ -249,7 +225,7 @@
       ${img(rest.img, 'thali', 7, 'heroimg', rest.name)}
       <div class="hero-grad"></div>
       <button class="hero-btn back" data-act="back">${icon('back', 20)}</button>
-      <button class="hero-btn share" data-act="toast" data-msg="Link copied">${icon('share', 18)}</button>
+      <button class="hero-btn share" data-act="copy-page-link">${icon('share', 18)}</button>
     </div>
 
     <div class="resto-head">
@@ -263,7 +239,7 @@
         <div class="rbadge"><div class="rb-top">${esc(fmtEta(rest))}</div><div class="rb-bot">Delivery</div></div>
         <div class="rbadge"><div class="rb-top">${esc(rest.costForTwo || '—')}</div><div class="rb-bot">Cost for two</div></div>
       </div>
-      ${headerLive('/mapi/menu/pl', r, `${cats.length} sections · ${itemsCount} items`)}
+      ${''}
     </div>
 
     ${(r.offers || []).length ? `<div class="offers">${r.offers.slice(0, 3).map((o) => `<div class="offer-row">${icon('tag', 16)}<div><b>${esc(o.header || o.code || 'Offer')}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}</div></div>`).join('')}</div>` : ''}
@@ -290,8 +266,7 @@
           )
           .join('')}
       </div>
-    </div>
-    <div class="foot-note">Menu served by ${esc(rest.name)} · ${itemsCount} items · prices as listed in the app's own catalog</div>`;
+    </div>`;
   };
 
   function menuRow(d, rest) {
@@ -374,7 +349,6 @@
       <div class="bl"><span>GST & restaurant charges</span><b>${money(b.gst)}</b></div>
       ${b.discount ? `<div class="bl disc"><span>Coupon ${esc(S.coupon)}</span><b>− ${money(b.discount)}</b></div>` : ''}
       <div class="bl tot"><span>To Pay</span><b>${money(b.total)}</b></div>
-      <div class="bill-note">Fees modelled locally — the fee service sits behind the authed tier.</div>
     </div>
 
     <div class="stickybar">
@@ -475,7 +449,6 @@
     </div>
     <div class="tr-card">
       <div class="tr-rider">${icon('bike', 18)} <b>${esc(o.rider || 'Ravi K.')}</b><span>Your delivery partner</span></div>
-      <button class="btn ghost" data-act="toast" data-msg="Calling is mocked in this build">Call</button>
     </div>
     <div class="bill">
       <h3>Order summary</h3>
@@ -512,171 +485,138 @@
     </svg>`;
   }
 
-  /* ---------------------------------------------------------------- API CONSOLE */
-  RENDERERS.api = async function () {
-    S.tab = 'api';
-    const [r, h] = await Promise.all([API.map(), API.health()]);
-    const map = (r && r.map) || [];
-    const build = h && h.ok ? h : null;
-    const tone = (t) => (t === 'public' ? 'ok' : t === 'blocked' ? 'bad' : 'warn');
-    return `<div class="apihead">
-      <h1>Endpoint map</h1>
-      <p>Every route below was found by probing the app's own network surface, then verified from this box. Run any of them.</p>
-      ${
-        build
-          ? `<div class="buildrow">
-        <span class="bdot"></span>
-        <b>${esc(String(build.commit).slice(0, 7))}</b>
-        <span>${esc(build.branch)}${build.env && build.env.sms ? '' : ' · dev OTP'}${build.authStore && build.authStore.persistent ? ' · disk' : ' · ephemeral store'}</span>
-      </div>`
-          : '<div class="buildrow bad"><span class="bdot"></span><b>no /api/health</b><span>this host is not running server.js</span></div>'
-      }
-    </div>
-    <div class="apilist">
-      ${map
-        .map(
-          (e, i) => `<div class="apirow">
-        <div class="api-top">
-          <span class="method">${e.method}</span>
-          <code>${esc(e.path)}</code>
-          <span class="tier ${tone(e.tier)}">${e.status}</span>
-        </div>
-        <div class="api-note">${esc(e.note)}</div>
-        <div class="api-q"><b>query</b> ${esc(e.q)}</div>
-        <div class="api-h"><b>headers</b> ${esc(e.headers.join(' · ') || 'none')}</div>
-        <div class="api-run">
-          <button class="mini" data-act="probe" data-path="${esc(e.path.split(',')[0].trim())}">Run live probe</button>
-          <span class="probe-out" id="probe-${i}"></span>
-        </div>
-      </div>`
-        )
-        .join('')}
-    </div>
-    <div class="foot-note">Blocked rows are Akamai edge challenges (202, empty body) or the auth tier. Nothing here is scraped from a browser session — it's the same JSON the Android app receives.</div>`;
-  };
-
-  /* ---------------------------------------------------------------- INSTAMART / DINEOUT */
-  RENDERERS.instamart = async function () {
-    S.tab = 'instamart';
-    return `<div class="apihead">
-      <h1>Instamart</h1>
-      <p>Vertical shares the same edge. This route answers <code>202</code> — an Akamai sensor challenge with an empty body — from any client that hasn't cleared it.</p>
-    </div>
-    <div class="probecard" id="im-probe">
-      <code>GET /api/instamart/home?pageType=EXPLORE&amp;lat=${here().lat}&amp;lng=${here().lng}</code>
-      <button class="mini" data-act="probe" data-path="/api/instamart/home?pageType=EXPLORE&lat=${here().lat}&lng=${here().lng}" data-target="im">Run probe</button>
-      <span class="probe-out" id="probe-im"></span>
-    </div>
-    <div class="banner">
-      <b>What it would take:</b> a browser/WebView session that executes the sensor script and mints valid <code>_abck</code> / <code>bm_sz</code> cookies, or the app's own attested device headers. The food vertical doesn't need it — its routes pass on <code>UA</code> + <code>__fetch_request: 1</code> alone.
-    </div>
-    <div class="foot-note">Grocery UI is deliberately not faked. The Food tab is real data end-to-end.</div>`;
-  };
-
-  RENDERERS.dineout = async function () {
-    S.tab = 'dineout';
-    return `<div class="apihead">
-      <h1>Dineout</h1>
-      <p>Dineout lives on a separate path space. Both guesses below returned <code>404</code> from the edge, so the real prefix is still unknown.</p>
-    </div>
-    <div class="probecard">
-      <code>GET /mapi/dineout/v2/home · /dapi/dineout/v2/home</code>
-      <button class="mini" data-act="probe" data-path="/dapi/dineout/v2/home?lat=${here().lat}&lng=${here().lng}" data-target="dn">Run probe</button>
-      <span class="probe-out" id="probe-dn"></span>
-    </div>
-    <div class="banner"><b>Next step:</b> pull the Dineout tab out of an APK's JS bundle (React Native ships readable route strings) or catch it with a MITM proxy on a rooted device.</div>`;
-  };
-
-  /* ---------------------------------------------------------------- AUTH */
-  RENDERERS.auth = async function () {
-    const a = S.auth;
-    const mode = a.mode || 'otp';
-
-    const header = `<div class="authbar">
-      <button class="iconbtn" data-act="auth-back">${icon('back', 20)}</button>
-      <b>${a.step === 'otp' ? 'Verify number' : a.step === 'minted' ? 'Device key' : 'Sign in'}</b>
-    </div>`;
-
-    /* --- key just minted: show it once --- */
-    if (a.step === 'minted') {
-      return `${header}
-      <div class="auth-wrap">
-        <div class="auth-card">
-          <div class="auth-icon">${icon('check', 26)}</div>
-          <h1>Device key created</h1>
-          <p>This key signs you in on this device without an SMS. It works only for <b>+91 ${esc(a.phone || '')}</b> and only because you verified that number just now.</p>
-          <div class="keybox" id="keybox">${esc(a.deviceKey)}</div>
-          <button class="btn ghost wide" data-act="copy-key" style="margin-bottom:10px">Copy key</button>
-          <button class="btn solid wide auth-cta" data-act="key-done">Continue</button>
-          <div class="auth-foot"><span class="lockline">${icon('check', 12)} Shown once · revocable from Orders</span></div>
-        </div>
-      </div>`;
-    }
-
-    /* --- OTP step --- */
-    if (a.step === 'otp') {
-      return `${header}
-      <div class="auth-wrap">
-        <div class="auth-card">
-          <div class="auth-icon">${icon('check', 26)}</div>
-          <h1>Enter the code</h1>
-          <p>Sent to <b>+91 ${esc(a.phone || '')}</b>. It expires in ${Math.max(0, Math.ceil((a.expiresAt - Date.now()) / 60000))} min.</p>
-          ${a.devCode ? `<div class="dev-chip">${icon('bolt', 12)} Dev mode · code <b>${esc(a.devCode)}</b> (no SMS configured)</div>` : ''}
-          <div class="otp-row" id="otprow">
-            ${[0, 1, 2, 3, 4, 5].map((i) => `<input class="otpbox" data-i="${i}" inputmode="numeric" maxlength="1" autocomplete="${i === 0 ? 'one-time-code' : 'off'}">`).join('')}
-          </div>
-          <div class="auth-error" id="otpErr"></div>
-          <button class="btn solid wide auth-cta" data-act="otp-verify">Verify &amp; sign in</button>
-          <div class="auth-foot">
-            <button class="linkbtn" data-act="otp-resend" ${Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000)) > 0 ? 'disabled' : ''}>
-              ${Math.max(0, Math.ceil((a.resendAt - Date.now()) / 1000)) > 0 ? `Resend in ${Math.ceil((a.resendAt - Date.now()) / 1000)}s` : 'Resend code'}
-            </button>
-            <button class="linkbtn" data-act="auth-change">Change number</button>
-          </div>
-        </div>
-      </div>`;
-    }
-
-    /* --- phone / key screens, with the mode switch --- */
-    const seg = `<div class="searchtabs authseg">
-      <button class="stab ${mode === 'otp' ? 'on' : ''}" data-act="auth-mode" data-m="otp">OTP</button>
-      <button class="stab ${mode === 'key' ? 'on' : ''}" data-act="auth-mode" data-m="key">Access key</button>
-    </div>`;
-
-    if (mode === 'key') {
-      return `${header}
-      <div class="auth-wrap">
-        <div class="auth-card">
-          ${seg}
-          <div class="auth-icon">${icon('bolt', 26)}</div>
-          <h1>Sign in with a device key</h1>
-          <p>A key your own server minted for this number after an OTP. One key, one number — no code needed.</p>
-          <label class="field-label">Device key</label>
-          <div class="keyinput">
-            <input id="dkey" spellcheck="false" autocomplete="off" placeholder="SWG-DVC-XXXX-XXXX-XXXX">
-          </div>
-          <div class="auth-error" id="keyErr"></div>
-          <button class="btn solid wide auth-cta" data-act="key-login">Sign in</button>
-          <div class="auth-foot"><span class="lockline">${icon('check', 12)} Keys are minted after OTP only · hash stored, never the key</span></div>
-        </div>
-      </div>`;
-    }
-
-    return `${header}
+  /* ---------------------------------------------------------------- LOGIN */
+  RENDERERS.login = async function (params) {
+    const err = (params && params.err) || '';
+    return `<div class="authbar"><b>Sign in</b></div>
     <div class="auth-wrap">
       <div class="auth-card">
-        ${seg}
-        <div class="auth-icon">${icon('user', 26)}</div>
-        <h1>Sign in with your number</h1>
-        <p>We send a 6-digit code to the number you own. No passwords, nothing stored on the device.</p>
-        <label class="field-label">Mobile number</label>
-        <div class="phone-field">
-          <span class="pf-cc">+91</span>
-          <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="98765 43210"
-            value="${esc(a.phone || '')}" autocomplete="tel-national">
+        <div class="auth-icon">${icon('one', 26)}</div>
+        <h1>Enter your key</h1>
+        <div class="keyinput">
+          <input id="akey" spellcheck="false" autocomplete="off" autocapitalize="characters"
+            placeholder="SWG-XXXX-XXXX-XXXX" value="${esc(S.auth.key || '')}">
         </div>
-        <button class="btn solid wide auth-cta" data-act="otp-send" id="otpSendBtn">Send OTP</button>
-        <div class="auth-foot"><span class="lockline">${icon('check', 12)} Code hashed at rest · 5 min life · single use</span></div>
+        <div class="auth-error" id="keyErr">${esc(err)}</div>
+        <button class="btn solid wide auth-cta" data-act="key-login">Continue</button>
+      </div>
+    </div>`;
+  };
+
+  /* ---------------------------------------------------------------- CLAIM */
+  const pad2 = (n) => String(Math.floor(n)).padStart(2, '0');
+  const slotWindow = (st) => `${pad2(st.from)}:00 – ${st.to >= 24 ? '00:00' : pad2(st.to) + ':00'} IST`;
+
+  function claimCard(id, c) {
+    const st = c.slot;
+    const when = slotWindow(st);
+    const value = `Flat ₹${st.flat} off · above ₹${st.min}`;
+
+    if (c.claimed && c.claim) {
+      return `<article class="claim-card done">
+        <div class="cc-head">
+          <span class="cc-ic ok">${icon('check', 18)}</span>
+          <div><b>${esc(st.label)} offer</b><span>${when}</span></div>
+        </div>
+        <div class="cc-val">${value}</div>
+        <div class="cc-code"><span>${esc(c.claim.code)}</span><button class="mini" data-act="copy-text" data-t="${esc(c.claim.code)}">Copy</button></div>
+        <div class="cc-acts">
+          <button class="btn solid grow" data-act="use-claim" data-code="${esc(c.claim.code)}">Use on this order</button>
+          <button class="btn ghost" data-act="tab" data-tab="food">Order</button>
+        </div>
+      </article>`;
+    }
+
+    if (!st.open) {
+      return `<article class="claim-card shut">
+        <div class="cc-head">
+          <span class="cc-ic">${icon('clock', 18)}</span>
+          <div><b>${esc(st.label)} offer</b><span>${when}</span></div>
+        </div>
+        <div class="cc-val">${value}</div>
+        <button class="btn ghost wide" disabled>Opens at ${pad2(st.from)}:00 IST</button>
+        <div class="cc-count" data-opens="${st.opensAt}"></div>
+      </article>`;
+    }
+
+    return `<article class="claim-card">
+      <div class="cc-head">
+        <span class="cc-ic live">${icon('tag', 18)}</span>
+        <div><b>${esc(st.label)} offer</b><span>${when}</span></div>
+      </div>
+      <div class="cc-val">${value}</div>
+      <div class="cc-acts">
+        <button class="btn solid grow" data-act="do-claim" data-slot="${esc(id)}">Claim</button>
+      </div>
+    </article>`;
+  }
+
+  function claimGate() {
+    return `<div class="authbar"><b>Offers</b></div>
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-icon">${icon('tag', 26)}</div>
+        <h1>Sign in to claim</h1>
+        <button class="btn solid wide auth-cta" data-act="go-login">Enter your key</button>
+      </div>
+    </div>`;
+  }
+
+  RENDERERS.claim = async function () {
+    S.tab = 'claim';
+    if (!S.user) return claimGate();
+    const r = await API.claims();
+    if (!r || !r.ok) return claimGate();
+    S.user = r.user;
+    S.claims = r.claims;
+    Object.values(S.claims || {}).forEach((c) => c.claim && C.registerClaimCoupon(c.claim));
+
+    const slots = ['breakfast', 'dinner'].filter((id) => S.claims[id]);
+    const claimedCount = slots.filter((id) => S.claims[id].claimed).length;
+
+    let admin = '';
+    if (S.user.admin) {
+      const kr = await API.keysAll();
+      const keys = (kr && kr.keys) || [];
+      admin = `${sectionHead('wallet', 'Keys', keys.length)}
+      <div class="acct-list">
+        ${keys
+          .map(
+            (k) => `<div class="keyrow">
+            <div class="kr-l"><b>${esc(k.label)}${k.admin ? ' · admin' : ''}</b>
+              <span>••••-${esc(k.tail || '')} · used ${k.uses || 0}×</span></div>
+            <button class="revoke" data-act="revoke-access" data-id="${esc(k.id)}">Revoke</button>
+          </div>`
+          )
+          .join('') || '<div class="acct-list"></div>'}
+      </div>
+      <div class="pad-16"><button class="btn ghost wide" data-act="mint-key">New key</button></div>`;
+    }
+
+    return `<div class="claimbar">
+      <div class="cb-t"><h1>Offers</h1><span>${claimedCount} of ${slots.length} claimed today</span></div>
+    </div>
+    <div class="claim-list">
+      ${slots.map((id) => claimCard(id, S.claims[id])).join('')}
+    </div>
+    ${admin}`;
+  };
+
+  /* ---------------------------------------------------------------- SUCCESS */
+  RENDERERS.success = async function () {
+    const s = S.success || {};
+    const head = s.title || 'Done';
+    const sub = s.sub || '';
+    const code = s.code || '';
+    return `<div class="succ-wrap">
+      <div class="succ-ring">${icon('check', 34)}</div>
+      <h1>${esc(head)}</h1>
+      ${sub ? `<p>${esc(sub)}</p>` : ''}
+      ${code ? `<div class="cc-code"><span>${esc(code)}</span><button class="mini" data-act="copy-text" data-t="${esc(code)}">Copy</button></div>` : ''}
+      <div class="succ-acts">
+        ${s.orderId ? `<button class="btn solid grow" data-act="open-track" data-id="${esc(s.orderId)}">Track order</button>` : ''}
+        ${code ? `<button class="btn ${s.orderId ? 'ghost' : 'solid'} grow" data-act="tab" data-tab="food">Order now</button>` : ''}
+        <button class="btn ghost wide" data-act="tab" data-tab="claim">Back to offers</button>
       </div>
     </div>`;
   };
@@ -685,17 +625,13 @@
   RENDERERS.account = async function () {
     S.tab = 'orders';
     const u = S.user;
-    let keys = [];
-    if (u) {
-      const k = await API.keys();
-      keys = (k && k.keys) || [];
-    }
+
     const profile = u
       ? `<div class="acct-top">
           <div class="av-btn big signed">${icon('user', 24)}</div>
           <div style="flex:1;min-width:0">
-            <h2>+91 ${esc(u.masked.replace('+91 ', ''))}</h2>
-            <span>Signed in${u.logins ? ` · ${u.logins} login${u.logins > 1 ? 's' : ''}` : ''}</span>
+            <h2>${esc(u.label || u.masked)}</h2>
+            <span>${esc(u.masked)}${u.admin ? ' · admin' : ''}</span>
           </div>
           <button class="mini ghost" data-act="sign-out">Sign out</button>
         </div>`
@@ -703,38 +639,37 @@
           <div class="av-btn big">${icon('user', 24)}</div>
           <div style="flex:1;min-width:0">
             <h2>Guest</h2>
-            <span>Sign in with your number to keep orders</span>
+            <span>Sign in with your key</span>
           </div>
         </div>
         <div class="pad-16" style="padding-top:0">
-          <button class="btn solid wide" data-act="go-auth">Sign in with OTP</button>
+          <button class="btn solid wide" data-act="go-login">Enter your key</button>
         </div>`;
+
+    const share = `<div class="acct-list">
+      <button class="arow" data-act="copy-addr-link">
+        ${icon('pin', 17)}<div><b>Address link</b><span>${esc(S.addr)}</span></div>
+        <span class="chev">${icon('share', 16)}</span>
+      </button>
+      <button class="arow" data-act="copy-cart-link">
+        ${icon('cart', 17)}<div><b>Cart link</b><span>${cartCount() ? cartCount() + ' items · ' + money(itemTotal()) : 'Cart is empty'}</span></div>
+        <span class="chev">${icon('share', 16)}</span>
+      </button>
+      <button class="arow" data-act="tab" data-tab="claim">
+        ${icon('tag', 17)}<div><b>Offers</b><span>Breakfast and dinner</span></div>
+        <span class="chev">${icon('chev', 16)}</span>
+      </button>
+    </div>`;
 
     return `${appBar()}
     ${profile}
-    ${sectionHead('wallet', 'Account', undefined)}
+    ${sectionHead('share', 'Share', undefined)}
+    ${share}
+    ${sectionHead('order', 'Account', undefined)}
     <div class="acct-list">
       <div class="arow">${icon('order', 17)}<div><b>Orders</b><span>${S.orders.length} in this session</span></div></div>
-      <div class="arow">${icon('pin', 17)}<div><b>Address</b><span>${esc(S.addr)}</span></div></div>
       <div class="arow">${icon('one', 17)}<div><b>Swiggy One</b><span>Not a member</span></div></div>
-      <div class="arow">${icon('help', 17)}<div><b>Help</b><span>Support is mocked</span></div></div>
     </div>
-    ${
-      u
-        ? `${sectionHead('bolt', 'Device keys', keys.length)}
-          <div class="acct-list">
-            ${keys
-              .map(
-                (k) => `<div class="keyrow">
-              <div class="kr-l"><b>${esc(k.label || 'device')} · ${esc(k.id)}</b>
-                <span>used ${k.uses || 0}×${k.lastUsed ? ' · last ' + timeAgo(k.lastUsed) : ''}</span></div>
-              <button class="revoke" data-act="revoke-key" data-id="${esc(k.id)}">Revoke</button>
-            </div>`
-              )
-              .join('') || '<div class="banner">No device keys yet. Sign in with OTP once and one is minted.</div>'}
-          </div>`
-        : ''
-    }
     ${
       S.orders.length
         ? `${sectionHead('clock', 'Recent orders', S.orders.length)}
@@ -745,18 +680,42 @@
           <span class="chev">${icon('chev', 16)}</span></button>`
             )
             .join('')}</div>`
-        : `<div class="empty"><div class="empty-art">${icon('clock', 30)}</div><h3>No orders yet</h3><p>Place one and it lands here with a live timeline.</p><button class="btn solid" data-act="tab" data-tab="food">Browse restaurants</button></div>`
+        : `<div class="empty"><div class="empty-art">${icon('clock', 30)}</div><h3>No orders yet</h3><p>Place one and it lands here.</p><button class="btn solid" data-act="tab" data-tab="food">Browse restaurants</button></div>`
     }`;
   };
-
   /* ---------------------------------------------------------------- ACTIONS */
+  /* clipboard with a textarea fallback — navigator.clipboard needs a secure context */
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   const A = {
     back: () => back(),
     noop: () => toast('Filters are decorative in this build'),
 
     tab: (el) => {
       const t = el.dataset.tab;
-      const target = { food: 'home', api: 'api', search: 'search', cart: 'cart', orders: 'account', instamart: 'instamart', dineout: 'dineout' }[t];
+      const target = { food: 'home', search: 'search', claim: 'claim', cart: 'cart', orders: 'account' }[t];
       reset(target, t === 'search' ? {} : {});
     },
     'toggle-theme': () => {
@@ -854,135 +813,130 @@
         rider: 'Ravi K.',
       };
       S.orders.unshift(order);
+      const used = S.coupon;
       S.cart = null;
       S.coupon = null;
       S.tip = 0;
       save();
+      S.success = {
+        title: 'Order placed',
+        sub: '#' + order.id + ' · ' + order.restName + ' · ' + money(order.total) + (used ? ' · ' + used + ' applied' : ''),
+        code: '',
+        orderId: order.id,
+      };
       reset('track', { id: order.id });
       startTicker();
     },
     'open-track': (el) => go('track', { id: el.dataset.id }),
     'go-account': () => go('account', {}),
 
-    /* ---- auth ---- */
-    'go-auth': () => {
-      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: S.auth.phone || '', resendAt: 0 };
-      go('auth', {});
-    },
-    'auth-mode': (el) => {
-      S.auth.mode = el.dataset.m;
-      S.auth.step = 'phone';
-      C.render();
-    },
+    /* ---- auth: one field, JSON in, JSON out ---- */
+    'go-login': () => go('login', {}),
+    'go-claim': () => reset('claim', {}),
+
     'key-login': async () => {
-      const el = $('#dkey');
-      const key = ((el && el.value) || '').trim().toUpperCase();
+      const el = $('#akey');
       const err = $('#keyErr');
+      let raw = ((el && el.value) || '').trim();
       if (err) err.textContent = '';
+      /* the field takes the bare key or the JSON body itself */
+      if (raw.charAt(0) === '{') {
+        try {
+          raw = String(JSON.parse(raw).key || '').trim();
+        } catch (e) {
+          if (err) err.textContent = 'That JSON does not parse.';
+          return;
+        }
+      }
+      const key = raw.toUpperCase();
       if (!key) {
-        if (err) err.textContent = 'Paste your device key.';
+        if (err) err.textContent = 'Enter your key.';
         return;
       }
-      const r = await API.keyLogin(key);
-      if (!r.ok) {
-        if (err) err.textContent = r.message || 'That key was not accepted.';
-        return;
-      }
-      S.user = r.user;
-      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
-      toast('Signed in as +91 ' + r.user.phone);
-      reset('account');
-    },
-    'copy-key': async () => {
-      const box = $('#keybox');
-      const text = box ? box.textContent.trim() : S.auth.deviceKey || '';
-      try {
-        await navigator.clipboard.writeText(text);
-        toast('Key copied');
-      } catch (e) {
-        toast('Copy blocked — select it by hand');
-      }
-    },
-    'key-done': () => {
-      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
-      reset('account');
-    },
-    'auth-back': () => back(),
-    'auth-change': () => {
-      S.auth.step = 'phone';
-      C.render();
-    },
-    'otp-send': async () => {
-      const el = $('#phone');
-      const phone = (el && el.value ? el.value : '').replace(/\D/g, '');
-      if (phone.length !== 10) return toast('Enter a 10-digit mobile number');
-      const btn = $('#otpSendBtn');
-      if (btn) btn.textContent = 'Sending…';
-      const r = await API.requestOtp(phone);
-      if (!r.ok) {
-        if (btn) btn.textContent = 'Send OTP';
-        return toast(r.message || 'Could not send the code');
-      }
-      S.auth = {
-        step: 'otp',
-        requestId: r.requestId,
-        phone: r.phone,
-        devCode: r.devCode || null,
-        expiresAt: Date.now() + (r.expiresIn || 300) * 1000,
-        resendAt: Date.now() + (r.resendAfter || 30) * 1000,
-      };
-      C.render();
-      setTimeout(() => {
-        const first = $('.otpbox');
-        if (first) first.focus();
-      }, 60);
-    },
-    'otp-resend': async () => {
-      if (S.auth.resendAt > Date.now()) return;
-      const r = await API.requestOtp(S.auth.phone);
-      if (!r.ok) return toast(r.message || 'Could not resend');
-      S.auth.requestId = r.requestId;
-      S.auth.devCode = r.devCode || null;
-      S.auth.expiresAt = Date.now() + (r.expiresIn || 300) * 1000;
-      S.auth.resendAt = Date.now() + (r.resendAfter || 30) * 1000;
-      toast('New code sent');
-      C.render();
-    },
-    'otp-verify': async () => {
-      const code = $$('.otpbox').map((i) => i.value).join('');
-      const err = $('#otpErr');
-      if (code.length !== 6) {
-        if (err) err.textContent = 'Enter all six digits.';
-        return;
-      }
-      const r = await API.verifyOtp(S.auth.requestId, code);
-      if (!r.ok) {
-        if (err) err.textContent = r.message || 'That code is not right.';
-        $$('.otpbox').forEach((i) => (i.value = ''));
-        const first = $('.otpbox');
-        if (first) first.focus();
+      const r = await API.login(key);
+      if (!r || !r.ok) {
+        if (err) err.textContent = (r && r.message) || 'That key was not accepted.';
         return;
       }
       S.user = r.user;
-      if (r.deviceKey) {
-        S.auth = { step: 'minted', deviceKey: r.deviceKey, phone: r.user.phone };
+      S.claims = r.claims || {};
+      S.auth.key = key;
+      C.store.set('sw.lastkey', key);
+      Object.values(S.claims).forEach((c) => c.claim && C.registerClaimCoupon(c.claim));
+      toast('Signed in');
+      reset('claim');
+    },
+
+    /* ---- claims ---- */
+    'do-claim': async (el) => {
+      const slot = el.dataset.slot;
+      el.disabled = true;
+      const r = await API.claim(slot);
+      if (!r || !r.ok) {
+        el.disabled = false;
+        toast((r && r.message) || 'Could not claim');
         C.render();
         return;
       }
-      S.auth = { step: 'phone', mode: 'otp', requestId: null, devCode: null, phone: '', resendAt: 0 };
-      toast('Signed in as +91 ' + r.user.phone);
-      reset('account');
+      C.registerClaimCoupon(r.claim);
+      if (r.claims) S.claims = r.claims;
+      S.coupon = r.claim.code;
+      save();
+      S.success = {
+        title: r.claim.label + ' offer claimed',
+        sub: 'Flat ₹' + r.claim.flat + ' off above ₹' + r.claim.min + ' — applied to your cart.',
+        code: r.claim.code,
+      };
+      reset('success');
     },
-    'revoke-key': async (el) => {
-      const r = await API.revokeKey(el.dataset.id);
+
+    'use-claim': (el) => {
+      const code = el.dataset.code;
+      if (!COUPONS[code]) return toast('Claim it first');
+      S.coupon = code;
+      save();
+      const ok = couponEligible(code);
+      toast(ok.ok ? code + ' applied' : 'Saved — ' + ok.why);
+      reset('cart');
+    },
+
+    /* ---- share links ---- */
+    'copy-addr-link': async () => {
+      const ok = await copyText(C.Links.addrUrl());
+      toast(ok ? 'Address link copied' : 'Copy blocked');
+    },
+    'copy-cart-link': async () => {
+      const url = C.Links.cartUrl();
+      if (!url) return toast('Add something to the cart first');
+      const ok = await copyText(url);
+      toast(ok ? 'Cart link copied' : 'Copy blocked');
+    },
+    'copy-text': async (el) => {
+      const ok = await copyText(el.dataset.t || '');
+      toast(ok ? 'Copied' : 'Copy blocked');
+    },
+
+    /* ---- admin: hand keys to other people ---- */
+    'mint-key': async () => {
+      const r = await API.mintKey('guest');
+      if (!r || !r.ok) return toast((r && r.message) || 'Could not mint');
+      const shareUrl = location.origin + location.pathname + '#claim&k=' + r.key;
+      S.success = { title: 'Key created', sub: shareUrl, code: r.key };
+      reset('success');
+      copyText(shareUrl);
+    },
+    'revoke-access': async (el) => {
+      const r = await API.revokeAccessKey(el.dataset.id);
       toast(r && r.ok ? 'Key revoked' : 'Could not revoke');
       C.render();
     },
+
     'sign-out': async () => {
       await API.logout();
       S.user = null;
+      S.claims = null;
       toast('Signed out');
-      C.render();
+      reset('home');
     },
 
     'pick-loc': () => {
@@ -1009,14 +963,9 @@
     'sheet-close': () => closeSheet(),
     toast: (el) => toast(el.dataset.msg || ''),
 
-    probe: async (el) => {
-      const target = el.dataset.target;
-      const outId = target ? '#probe-' + target : el.parentElement.querySelector('.probe-out');
-      const out = typeof outId === 'string' ? $(outId) : outId;
-      if (out) out.innerHTML = '<i class="spin"></i>';
-      const r = await API.raw(el.dataset.path);
-      const cls = r.ok ? 'ok' : 'bad';
-      if (out) out.innerHTML = `<span class="pv ${cls}">${r.status} · ${r.bytes || 0} bytes · ${r.ms} ms</span>`;
+    'copy-page-link': async () => {
+      const ok = await copyText(location.href);
+      toast(ok ? 'Link copied' : 'Copy blocked');
     },
 
     'cart-reset-add': (el) => {
@@ -1151,26 +1100,14 @@
     box.innerHTML = `<div class="pad-16"><i class="spin big"></i></div>`;
     const r = await API.search(str, tab);
     if (!r.ok) {
-      box.innerHTML = `<div class="banner warn">Search failed — ${esc(r.error || 'error')} ${r.status || ''}</div>`;
+      box.innerHTML = `<div class="banner warn">No results right now. Try again in a moment.</div>`;
       return;
     }
     box.innerHTML = renderSearchResults(r, tab, str);
   }
 
-  /* OTP boxes: digits only, auto-advance, backspace walks back, paste fills the row */
+  /* search box: debounced live search */
   document.addEventListener('input', (e) => {
-    const box = e.target.closest('.otpbox');
-    if (box) {
-      const v = box.value.replace(/\D/g, '').slice(-1);
-      box.value = v;
-      box.classList.toggle('filled', !!v);
-      const boxes = Array.from(document.querySelectorAll('.otpbox'));
-      const i = boxes.indexOf(box);
-      if (v && i < boxes.length - 1) boxes[i + 1].focus();
-      const err = document.getElementById('otpErr');
-      if (err) err.textContent = '';
-      return;
-    }
     const inp = e.target.closest('#q');
     if (!inp) return;
     const v = inp.value.trim();
@@ -1184,38 +1121,6 @@
   });
 
   /* ---------------------------------------------------------------- delegated clicks */
-  document.addEventListener('keydown', (e) => {
-    const box = e.target.closest && e.target.closest('.otpbox');
-    if (!box) return;
-    const boxes = Array.from(document.querySelectorAll('.otpbox'));
-    const i = boxes.indexOf(box);
-    if (e.key === 'Backspace' && !box.value && i > 0) {
-      boxes[i - 1].focus();
-      boxes[i - 1].value = '';
-      boxes[i - 1].classList.remove('filled');
-    }
-    if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
-    if (e.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
-    if (e.key === 'Enter') {
-      const btn = document.querySelector('[data-act="otp-verify"]');
-      if (btn) btn.click();
-    }
-  });
-
-  document.addEventListener('paste', (e) => {
-    const boxes = Array.from(document.querySelectorAll('.otpbox'));
-    if (!boxes.length) return;
-    const text = (e.clipboardData || window.clipboardData).getData('text') || '';
-    const digits = text.replace(/\D/g, '').slice(0, 6);
-    if (!digits) return;
-    e.preventDefault();
-    boxes.forEach((b, i) => {
-      b.value = digits[i] || '';
-      b.classList.toggle('filled', !!digits[i]);
-    });
-    boxes[Math.min(digits.length, 5)].focus();
-  });
-
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;
@@ -1259,8 +1164,35 @@
     });
   }
 
+  /* claim cards count down to the next window, then re-render once it opens */
+  function afterClaim(app) {
+    clearInterval(window.__claimTick);
+    const nodes = Array.from(app.querySelectorAll('.cc-count[data-opens]'));
+    if (!nodes.length) return;
+    const paint = () => {
+      let live = false;
+      for (const n of nodes) {
+        const ms = Number(n.dataset.opens) - Date.now();
+        if (ms <= 0) {
+          clearInterval(window.__claimTick);
+          C.render();
+          return;
+        }
+        live = true;
+        const h = Math.floor(ms / 3600_000);
+        const m = Math.floor((ms % 3600_000) / 60_000);
+        const s = Math.floor((ms % 60_000) / 1000);
+        n.textContent = `Opens in ${h}h ${pad2(m)}m ${pad2(s)}s`;
+      }
+      if (!live) clearInterval(window.__claimTick);
+    };
+    paint();
+    window.__claimTick = setInterval(paint, 1000);
+  }
+
   window.__afterRender = function (app, v) {
     if (v.v === 'resto') afterResto(app);
+    if (v.v === 'claim') afterClaim(app);
     if (v.v !== 'resto') { window.__menuScroll = 0; window.__railScroll = 0; }
   };
 
