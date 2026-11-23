@@ -47,9 +47,18 @@ const Core = (function () {
     pay: 'upi',
     offline: false,
     user: null,
-    auth: { step: 'phone', requestId: null, devCode: null, phone: null, resendAt: 0 },
+    claims: null,
+    success: null,
+    linkKey: '',
+    auth: { key: store.get('sw.lastkey', '') },
     live: { listingMs: 0, menuMs: 0, calls: 0 },
   };
+
+  /* a location that arrived in a link gets parked here so here() can find it */
+  const linkLoc = store.get('sw.linkloc', null);
+  if (linkLoc && linkLoc.lat && linkLoc.lng) {
+    LOC.link = { key: 'link', label: linkLoc.label || 'Linked address', lat: linkLoc.lat, lng: linkLoc.lng };
+  }
 
   const applyTheme = () => {
     document.documentElement.setAttribute('data-theme', S.theme === 'dark' ? 'dark' : 'light');
@@ -66,6 +75,7 @@ const Core = (function () {
     store.set('sw.loc', S.loc);
     store.set('sw.addr', S.addr);
     store.set('sw.veg', S.veg);
+    store.set('sw.linkloc', LOC.link || null);
   };
 
   const here = () => LOC[S.loc] || LOC.gomti;
@@ -106,15 +116,16 @@ const Core = (function () {
     raw: (path) => api('/api/raw?' + q({ path }), { ttl: 0 }),
     map: () => api('/api/map', { ttl: Infinity }),
 
-    /* ---- auth (phone + OTP, HttpOnly cookie session) ---- */
+    /* ---- auth: JSON in, JSON out. One field. ---- */
     me: () => api('/api/auth/me', { ttl: 0 }),
-    requestOtp: (phone) => post('/api/auth/otp/request', { phone }),
-    verifyOtp: (requestId, code) => post('/api/auth/otp/verify', { requestId, code }),
+    login: (key) => post('/api/auth/login', { key }),
     logout: () => post('/api/auth/logout', {}),
-    keyLogin: (key) => post('/api/auth/key/login', { key }),
-    keys: () => api('/api/auth/keys', { ttl: 0 }),
+    claims: () => api('/api/auth/claims', { ttl: 0 }),
+    claim: (slot) => post('/api/auth/claim', { slot }),
+    mintKey: (label) => post('/api/auth/keys/mint', { label }),
+    keysAll: () => api('/api/auth/keys/all', { ttl: 0 }),
+    revokeAccessKey: (id) => post('/api/auth/keys/revoke', { id }),
     health: () => api('/api/health', { ttl: 0 }),
-    revokeKey: (id) => post('/api/auth/key/revoke', { id }),
   };
 
   async function post(path, body) {
@@ -136,25 +147,221 @@ const Core = (function () {
   async function refreshUser() {
     const r = await API.me();
     S.user = r && r.ok && r.signedIn ? r.user : null;
+    if (r && r.claims) S.claims = r.claims;
     return S.user;
   }
+
+  /* a claimed offer becomes a real coupon the bill engine can apply */
+  function registerClaimCoupon(claim) {
+    if (!claim || !claim.code) return;
+    COUPONS[claim.code] = {
+      flat: claim.flat,
+      min: claim.min,
+      label: claim.label + ' · flat ₹' + claim.flat + ' off',
+      claim: true,
+    };
+  }
+
+  /* ---------- shareable links ----------
+     #claim&k=SWG-XXXX-XXXX-XXXX&c=<b64url cart>&a=<b64url address>
+     Every segment is optional; order does not matter. */
+  const B64 = {
+    enc(obj) {
+      const bin = Array.from(new TextEncoder().encode(JSON.stringify(obj)))
+        .map((b) => String.fromCharCode(b))
+        .join('');
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    },
+    dec(s) {
+      try {
+        const b = String(s).replace(/-/g, '+').replace(/_/g, '/');
+        const pad = '='.repeat((4 - (b.length % 4)) % 4);
+        const bin = atob(b + pad);
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        const out = JSON.parse(new TextDecoder().decode(bytes));
+        return out && typeof out === 'object' ? out : null;
+      } catch (e) {
+        return null;
+      }
+    },
+  };
+
+  const Links = {
+    parse(hash) {
+      const out = { route: '', k: '', c: '', a: '' };
+      for (const part of String(hash || '').replace(/^#/, '').split('&')) {
+        if (!part) continue;
+        const i = part.indexOf('=');
+        if (i < 0) {
+          if (!out.route) out.route = part.toLowerCase();
+          continue;
+        }
+        const key = part.slice(0, i).toLowerCase();
+        let val = '';
+        try {
+          val = decodeURIComponent(part.slice(i + 1));
+        } catch (e) {
+          val = part.slice(i + 1);
+        }
+        if (key === 'r') out.route = val.toLowerCase();
+        else if (key === 'k' || key === 'c' || key === 'a') out[key] = val;
+      }
+      return out;
+    },
+
+    /* ---- address ---- */
+    encodeAddr() {
+      const l = here();
+      return B64.enc({ a: S.addr, y: l.lat, g: l.lng, l: l.label });
+    },
+    addrUrl() {
+      return location.origin + location.pathname + '#a=' + Links.encodeAddr();
+    },
+    applyAddr(payload) {
+      const p = typeof payload === 'string' ? B64.dec(payload) : payload;
+      if (!p || !p.a) return false;
+      S.addr = String(p.a).slice(0, 200);
+      if (typeof p.y === 'number' && typeof p.g === 'number') {
+        LOC.link = { key: 'link', label: String(p.l || S.addr.split(',')[0]).slice(0, 40), lat: p.y, lng: p.g };
+        S.loc = 'link';
+      }
+      save();
+      return true;
+    },
+
+    /* ---- cart ---- */
+    encodeCart() {
+      if (!S.cart || !cartCount()) return '';
+      const c = S.cart;
+      return B64.enc({
+        r: c.restId,
+        n: c.restName,
+        e: c.restEta || '',
+        g: c.img || '',
+        i: Object.values(c.items).map((i) => ({
+          k: i.key, id: i.id, nm: i.name, p: i.price, v: i.veg ? 1 : 0,
+          q: i.qty, va: i.variantName || '', an: i.addonNames || [],
+        })),
+      });
+    },
+    cartUrl() {
+      const c = Links.encodeCart();
+      return c ? location.origin + location.pathname + '#cart&c=' + c : '';
+    },
+    applyCart(payload) {
+      const p = typeof payload === 'string' ? B64.dec(payload) : payload;
+      if (!p || !p.r || !Array.isArray(p.i) || !p.i.length) return false;
+      const items = {};
+      for (const i of p.i.slice(0, 40)) {
+        const qty = Math.max(1, Math.min(20, Number(i.q) || 1));
+        const price = Math.max(0, Number(i.p) || 0);
+        if (!i.id || !i.nm) continue;
+        const key = String(i.k || [i.id, '-', []].join('|')).slice(0, 200);
+        items[key] = {
+          key,
+          id: String(i.id).slice(0, 60),
+          name: String(i.nm).slice(0, 120),
+          price,
+          veg: !!i.v,
+          img: '',
+          qty,
+          addonNames: Array.isArray(i.an) ? i.an.slice(0, 8).map(String) : [],
+          variantName: String(i.va || '').slice(0, 80),
+        };
+      }
+      if (!Object.keys(items).length) return false;
+      S.cart = {
+        restId: String(p.r).slice(0, 60),
+        restName: String(p.n || 'Restaurant').slice(0, 120),
+        restEta: String(p.e || '').slice(0, 40),
+        img: String(p.g || '').slice(0, 400),
+        items,
+      };
+      S.coupon = null;
+      save();
+      return true;
+    },
+
+    /* ---- the whole link, at boot ---- */
+    async consume() {
+      const l = Links.parse(location.hash);
+      let applied = null;
+      if (l.a && Links.applyAddr(l.a)) applied = 'address';
+      if (l.c && Links.applyCart(l.c)) applied = 'cart';
+      if (l.k) {
+        S.auth.key = l.k;
+        const r = await API.login(l.k);
+        if (r && r.ok) {
+          S.user = r.user;
+          S.claims = r.claims || null;
+          (Object.values(S.claims || {})).forEach((c) => c.claim && registerClaimCoupon(c.claim));
+          applied = 'key';
+        }
+      }
+      const route = l.route && RENDERERS[l.route] ? l.route : '';
+      return { link: l, applied, route };
+    },
+  };
 
   /* ---------- router ---------- */
   let token = 0;
   const RENDERERS = {}; // filled by views.js
+
+  /* view name <-> hash name. Payloads (k/c/a) are never written back out —
+     they are read once at boot, so a shared link stays a shared link. */
+  const HASH_OF = { account: 'orders' };
+  let syncingHash = false;
+  function syncHash() {
+    const v = view();
+    const name = HASH_OF[v.v] || v.v || 'home';
+    const want = '#' + name;
+    if (location.hash === want) return;
+    syncingHash = true;
+    try {
+      history.replaceState(null, '', want);
+    } catch (e) {
+      location.hash = name;
+    }
+    syncingHash = false;
+  }
+
   function go(v, params) {
     S.stack.push({ v, params: params || {} });
+    syncHash();
     render();
   }
   function back() {
     if (S.stack.length > 1) S.stack.pop();
+    syncHash();
     render();
   }
   function reset(v, params) {
     S.stack = [{ v, params: params || {} }];
+    syncHash();
     render();
   }
   const appEl = () => document.getElementById('app');
+
+  /* a pasted link (#claim, #cart&c=…, #success) drives the app */
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', async () => {
+      if (syncingHash) return;
+      const l = Links.parse(location.hash);
+      if (l.a) Links.applyAddr(l.a);
+      if (l.c && Links.applyCart(l.c)) toast('Cart loaded from link');
+      if (l.k) {
+        const r = await API.login(l.k);
+        if (r && r.ok) {
+          S.user = r.user;
+          S.claims = r.claims || null;
+          Object.values(S.claims || {}).forEach((c) => c.claim && registerClaimCoupon(c.claim));
+        }
+      }
+      const route = l.route && RENDERERS[l.route] ? l.route : '';
+      if (route && view().v !== route) reset(route);
+      else render();
+    });
+  }
 
   let lastKey = '';
   async function render() {
@@ -293,9 +500,9 @@ const Core = (function () {
   const TABS = [
     { id: 'food', label: 'Food' },
     { id: 'search', label: 'Search' },
+    { id: 'claim', label: 'Offers' },
     { id: 'cart', label: 'Cart' },
     { id: 'orders', label: 'Orders' },
-    { id: 'api', label: 'API' },
   ];
 
   function paintChrome() {
@@ -309,7 +516,7 @@ const Core = (function () {
     const bar = document.getElementById('cartpill');
     const n = cartCount();
     if (bar) {
-      const pillViews = ['home', 'search', 'resto'];
+      const pillViews = ['home', 'search', 'resto', 'claim'];
       bar.className = 'cartpill' + (n > 0 && pillViews.includes(view().v) ? ' show' : '');
       bar.innerHTML = n
         ? `<button class="cp-btn" data-act="go-cart"><span class="cp-n">${n} item${n > 1 ? 's' : ''}</span><span class="cp-m">${money(itemTotal())}</span><span class="cp-v">View Cart ${Art.icon('chev', 16)}</span></button>`
@@ -324,9 +531,9 @@ const Core = (function () {
       {
         food: Art.icon('store', 21),
         search: Art.icon('search', 21),
+        claim: Art.icon('tag', 21),
         cart: Art.icon('cart', 21),
         orders: Art.icon('clock', 21),
-        api: Art.icon('bolt', 21),
       }[id] || Art.icon('store', 21)
     );
   }
@@ -385,5 +592,8 @@ const Core = (function () {
     store,
     applyTheme,
     refreshUser,
+    registerClaimCoupon,
+    Links,
+    syncHash,
   };
 })();

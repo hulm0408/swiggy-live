@@ -497,8 +497,7 @@ function serveStatic(req, res) {
       uptime: Math.round(process.uptime()),
       authStore: info,
       env: {
-        sms: !!(process.env.SMS_WEBHOOK_URL),
-        devMode: process.env.AUTH_DEV_MODE !== '0',
+        login: 'access-key',
         dataDir: process.env.DATA_DIR || null,
         port: PORT,
       },

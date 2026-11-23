@@ -6,7 +6,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "probe": "bash tools/probe.sh"
+    "probe": "bash tools/probe.sh",
+    "test": "node harness/smoke.js"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.1"
   },
   "engines": { "node": ">=18" },
   "license": "MIT"

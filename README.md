@@ -12,24 +12,20 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![search](docs/search.png) | ![cart](docs/cart.png) | ![checkout](docs/checkout.png) |
 
-| Tracking | Orders | Endpoint map |
+| Tracking | Orders | Dark |
 |---|---|---|
-| ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![api](docs/api-console.png) |
+| ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![dark](docs/dark.png) |
 
-| Sign in | Access key | Key minted |
-|---|---|---|
-| ![sign in](docs/auth-phone.png) | ![access key](docs/auth-key.png) | ![minted](docs/auth-key-minted.png) |
-
-| Dark |
-|---|
-| ![dark](docs/dark.png) |
+> The `docs/auth-*.png` and `docs/api-console.png` shots in this folder predate the
+> access-key login and the removal of the in-app endpoint console. They are stale;
+> nothing in the app looks like them any more.
 
 ```bash
 git clone <this repo> && cd swiggy-live
 node server.js          # http://localhost:3000
 ```
 
-No dependencies. Node 18+.
+No runtime dependencies. Node 18+. `npm test` runs the end-to-end harness (jsdom, dev-only).
 
 ---
 
@@ -53,70 +49,115 @@ Light and dark both ship; the toggle sits in the app bar and persists. Everythin
 | Piece | What it does |
 |---|---|
 | `server.js` | Static host + edge proxy to `www.swiggy.com` + normalizers + `/api/map` |
-| `public/js/core.js` | State, router, cart engine, fetch layer |
-| `public/js/views.js` | Every screen: home, search, menu, cart, checkout, tracking, endpoint console |
+| `auth.js` | Access-key login, the claim ledger, key minting. JSON in, JSON out |
+| `public/js/core.js` | State, hash router, cart engine, link codec, fetch layer |
+| `public/js/views.js` | Every screen: home, search, menu, cart, checkout, tracking, login, offers |
 | `public/js/art.js` | Procedural SVG art — image fallbacks and all UI icons. No icon font, no CDN |
 | `public/js/data.js` | Offline demo catalog, used only when the proxy can't reach the edge |
+| `harness/smoke.js` | `npm test` — boots the real server and the real scripts in a DOM and clicks through |
 | `tools/probe.sh` | Re-runs the discovery. Same numbers, every box |
 
 The browser never talks to Swiggy. It talks to `/api/*` on this box; this box talks to `www.swiggy.com` and slims the protobuf-JSON down to view models (132 KB listing → ~20 KB; 134 KB menu → structured sections).
 
 ---
 
-## 1b. Auth — phone + OTP
+## 1b. Auth — one key, JSON in, JSON out
 
-`auth.js` is a self-contained module. It issues codes for a number you hold, verifies them, and keeps the session server-side.
-
-```
-POST /api/auth/otp/request   { phone: "9876543210" }
-     → { ok, requestId, expiresIn: 300, resendAfter: 30, devCode? }
-
-POST /api/auth/otp/verify    { requestId, code: "123456" }
-     → { ok, signedIn: true, user, deviceKey } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
-
-POST /api/auth/key/login     { key: "SWG-DVC-XXXX-XXXX-XXXX" }   → session, no SMS needed
-GET  /api/auth/keys          → the keys minted for this number (authed)
-POST /api/auth/key/revoke    { id }                               → kill one
-
-GET  /api/auth/me            → { ok, signedIn, user }
-POST /api/auth/logout        → clears the cookie, drops the session
-```
-
-### Device keys — the no-SMS path
-
-A **device key** is minted by the server the moment a number verifies an OTP, and shown to the client exactly once:
+There is no phone number, no OTP, no password. `auth.js` holds a table of access
+keys; the app has exactly one field and posts one JSON body.
 
 ```
-SWG-DVC-VZAZ-AZK6-JYV8
+POST /api/auth/login      { key: "SWG-WZEY-9089-69ZS" }
+     → { ok, signedIn: true, user, claims } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
+
+GET  /api/auth/me         → { ok, signedIn, user, claims }
+POST /api/auth/logout     → clears the cookie, drops the session
+
+POST /api/auth/keys/mint    { label }        → { ok, key }        (admin keys only)
+GET  /api/auth/keys/all                        → every live key    (admin keys only)
+POST /api/auth/keys/revoke  { id } or { key }  → kill one, and every session it holds
 ```
 
-Paste it on any device and you're in — no code, no SMS bill. It is bound to the number that earned it, hashed at rest (`sha256`, the key itself is never stored), count-tracked, and revocable from the Orders screen. Alphabet skips `0/O/1/I`, so a key can be read off a screen without ambiguity.
+The login field takes the bare key **or** the JSON body itself — paste
+`{"key":"SWG-WZEY-9089-69ZS"}` and it parses.
 
-What it deliberately is **not**: a session importer. There is no endpoint that accepts a `{mobile, token, sid, tid, deviceId}` blob — post one and the route answers `BAD_KEY_FORMAT`. A key can only exist because a number proved control of itself, so the box cannot be pointed at somebody else's session.
+### Keys
+
+```
+SWG-WZEY-9089-69ZS        seeded, admin, label "Owner"
+```
+
+Format is `SWG-` + three groups of four from a 32-char alphabet with `0/O/1/I`
+removed, so a key can be read off a screen without ambiguity. Keys are stored as
+`sha256` — the plaintext never touches disk — are use-counted, and are revocable.
+Revoking one kills every session minted from it on the next request.
+
+Provision more of them without touching code:
+
+```bash
+AUTH_ACCESS_KEYS="SWG-AAAA-BBBB-CCCC=Table 4,SWG-DDDD-EEEE-FFFF=Front desk:admin" node server.js
+```
+
+Or sign in with the admin key and hit **New key** on the Offers screen — that
+mints one and copies a sign-in link straight to the clipboard.
 
 **Posture**
 
 | | |
 |---|---|
-| Code at rest | `sha256(code + per-request salt)`, never plaintext |
-| Code life | 5 min, single use, newest code invalidates older ones for that number |
-| Brute force | 5 verify attempts per request, then the request dies |
-| Rate limits | 5 codes/hour/phone · 12 requests/hour/IP |
-| Session | opaque 32-byte id held server-side, delivered as an **HttpOnly** cookie — no token in JS, nothing for a script to read |
+| Key at rest | `sha256`, never plaintext |
+| Rate limits | 12 login attempts/hour/IP · 60 claims/hour/IP |
+| Session | opaque 32-byte id held server-side, delivered as an **HttpOnly** cookie — no token in JS |
 | Lifetime | 30 days, rolling when used |
-| Storage | `data/auth.json`, git-ignored, atomic writes |
+| Storage | `data/auth.json` (or `$DATA_DIR/auth.json`), git-ignored, atomic writes |
 
-**Key rules.** One key, one number. Minting requires a fresh OTP. Keys are listed masked (`device · 2ec…`) with use counts and last-used time, and revoking one kills it immediately — a revoked key returns `BAD_KEY` on the next attempt.
+---
 
-**Sending real SMS.** Set `SMS_WEBHOOK_URL` (and optionally `SMS_WEBHOOK_TOKEN`) and the module POSTs `{ phone, otp, ttl_seconds }` to your gateway instead of printing to the console:
+## 1c. Offers — the claim page
 
-```bash
-SMS_WEBHOOK_URL=https://your-gateway.example/send SMS_WEBHOOK_TOKEN=xxx node server.js
-COOKIE_SECURE=1 node server.js     # behind TLS
-AUTH_DEV_MODE=0 node server.js     # refuse to leak devCode to the client
+`#claim`. Two slots, one claim each per **IST calendar day**, enforced server-side
+so clearing browser storage does not reset anything.
+
+| Slot | Window (IST) | Reward | Coupon |
+|---|---|---|---|
+| Breakfast | 05:00 – 11:00 | flat ₹60 off above ₹149 | `BREAKFAST60` |
+| Dinner | 18:00 – 00:00 | flat ₹100 off above ₹249 | `DINNER100` |
+
+```
+GET  /api/auth/claims          → { ok, user, claims, slots }
+POST /api/auth/claim  { slot } → { ok, claim, slot, claims }
+                               → 409 OUTSIDE_WINDOW   outside the window
+                               → 409 ALREADY_CLAIMED  twice in one IST day
 ```
 
-With no gateway configured it runs in dev mode: the code prints to the server console and, only then, is echoed to the client so the flow is testable without an SMS bill.
+A claim returns a coupon code that the client registers into the existing bill
+engine and applies to the cart automatically, then lands on `#success`.
+Closed slots show a live countdown to the next window.
+
+Edit the slots in `CLAIM_SLOTS` at the top of `auth.js` — label, code, discount,
+minimum and window hours are all there.
+
+---
+
+## 1d. Address and cart by link
+
+Three optional fragments, any combination, read once at boot. Everything is
+base64url JSON, so a link is opaque and survives being pasted into chat.
+
+| Fragment | Carries | Example |
+|---|---|---|
+| `#a=<b64url>` | `{ a: address, y: lat, g: lng, l: label }` | `#a=eyJhIjoiRmxhdCA3…` |
+| `#c=<b64url>` | `{ r, n, e, g, i: [{ k, id, nm, p, v, q, va, an }] }` | `#cart&c=eyJyIjoiUjQy…` |
+| `#k=<key>` | an access key — signs the visitor in | `#claim&k=SWG-WZEY-9089-69ZS` |
+
+The bare screen name always works too: `#home`, `#claim`, `#cart`, `#orders`,
+`#success`, `#login`.
+
+`Core.Links.addrUrl()` and `Core.Links.cartUrl()` build them; **Account →
+Address link** and **Cart link** copy them. Opening a cart link restores the
+restaurant, every line, quantity, variant and add-on, and the bill total — and
+opens the cart view even for a signed-out visitor, since browsing never needed a
+key. Parsed payloads are length- and type-clamped before they touch state.
 
 ## 2. The endpoint map
 
@@ -205,10 +246,11 @@ GET https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w
 
 **Modelled locally, on purpose:**
 
-- **Auth.** OTP issue/verify, sessions and cookies are real code — see §1b. What is *not* here, by design: importing or replaying someone else's session. There is no session-JSON box and no key importer; a session can only be minted by proving control of the number.
-- **Cart, bill, checkout, tracking.** The cart endpoints sit behind the authed tier. Rather than fake an OTP flow or replay someone's session, the cart is local and priced off live menu data. Delivery/platform/GST lines are modelled with a `199` free-delivery threshold; the bill says so on screen.
+- **Auth.** Access-key issue, hashing, sessions and cookies are real code — see §1b. What is *not* here, by design: importing or replaying someone else's Swiggy session. There is no session-JSON box and no key importer.
+- **Offers.** The claim ledger is real: one per slot per IST day, held in the same store as the keys. The *reward* is a local coupon — it discounts the local bill, it is not a Swiggy promotion and no coupon is sent anywhere.
+- **Cart, bill, checkout, tracking.** The cart endpoints sit behind Swiggy's authed tier. The cart is local and priced off live menu data, with a `199` free-delivery threshold and modelled delivery/platform/GST lines.
 - **Order placement.** No order is sent anywhere. Placing one creates a local order object with a simulated rider timeline.
-- **Instamart and Dineout.** Deliberately not faked. Both tabs show the actual probe result and what it would take to open them.
+- **Instamart and Dineout.** Not built. Neither tab ships — see §5 for what opening them would take.
 
 Nothing here logs into an account, places an order, or touches payment. It reads public catalog data and renders it.
 
@@ -216,13 +258,21 @@ Nothing here logs into an account, places an order, or touches payment. It reads
 
 ## 4. Screens
 
-- **Home** — app bar with brand + location pill + theme toggle, live-catalog banner, category chips, restaurant cards with offer pills and rating chips, veg filter. Bottom nav: Food · Search · Cart · Orders · API.
+Bottom nav everywhere: **Food · Offers · Cart · Orders**.
+
+- **Login** — one field, one button. Takes the bare key or its JSON body. No OTP, no phone, no explanatory copy.
+- **Home** — app bar with brand + location pill + theme toggle, offers banner, category chips, restaurant cards with offer pills and rating chips, veg filter.
 - **Search** — debounced live query, Restaurants/Dishes tabs, dish cards carrying their restaurant.
 - **Menu** — hero, rating/ETA/cost badges, category rail with scroll-spy, veg mode, `ADD` vs `customisable` (variants/addons open the sheet), item sheet with portion radios, add-on checkboxes, live unit price.
-- **Cart** — single-restaurant rule enforced with the real "start a new cart" prompt, quantity steppers, coupons (`WELCOME50`, `TRYNEW`, `SWIGGYIT`, `FREEDEL`) with min-order checks, itemised bill.
+- **Offers** — breakfast and dinner cards: claim when the window is open, live countdown when it is not, code + **Use on this order** once claimed. Admin keys also get **Keys** — mint, list, revoke.
+- **Cart** — single-restaurant rule enforced with the real "start a new cart" prompt, quantity steppers, coupons (`WELCOME50`, `TRYNEW`, `SWIGGYIT`, `FREEDEL`, plus any claimed offer) with min-order checks, itemised bill.
 - **Checkout** — address, instructions, tip, payment method, bill summary.
 - **Tracking** — animated map, step timeline on real elapsed time, rider card, order summary.
-- **API** — the endpoint map above, in-app, with a **Run live probe** button per row that fires the request through the proxy and prints code / bytes / ms.
+- **Success** — `#success`. Lands here after a claim or a key mint.
+- **Account** — who you are, the address and cart share links, recent orders.
+
+The in-app endpoint console is gone. §2 below is the record of how the routes were
+found; it lives in the README and in `tools/probe.sh`, not in the product.
 
 ---
 

@@ -866,3 +866,68 @@ img { display: block; }
 .buildrow .bdot { width: 6px; height: 6px; border-radius: 99px; background: var(--green); }
 .buildrow.bad { background: var(--red-soft); border-color: rgba(255,77,77,.35); }
 .buildrow.bad .bdot { background: var(--red); }
+
+/* ---------------------------------------------------------------- claims */
+.claimbar {
+  padding: 18px 16px 12px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.cb-t h1 { font-family: var(--font-head); font-size: 22px; font-weight: 900; margin: 0; letter-spacing: -0.025em; }
+.cb-t span { font-size: 11.5px; color: var(--faint); font-weight: 600; }
+
+.claim-list { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+.claim-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.claim-card.done { border-color: rgba(16, 185, 129, 0.35); background: linear-gradient(180deg, var(--green-soft) 0%, var(--bg-card) 60%); }
+.claim-card.shut { opacity: 0.72; }
+
+.cc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.cc-head b { display: block; font-family: var(--font-head); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+.cc-head span { font-size: 11px; color: var(--faint); font-weight: 600; }
+.cc-ic {
+  width: 38px; height: 38px; flex: 0 0 38px; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--bg-active); color: var(--blue-deep);
+}
+.cc-ic.live { background: var(--grad); color: #fff; box-shadow: var(--glow); }
+.cc-ic.ok { background: var(--green-soft); color: var(--green-ink); }
+
+.cc-val { font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+
+.cc-code {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg-input); border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 12px;
+}
+.cc-code span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px; font-weight: 800; letter-spacing: 0.1em; color: var(--blue-deep);
+}
+
+.cc-acts { display: flex; gap: 8px; }
+.cc-count { margin-top: 10px; text-align: center; font-size: 11px; color: var(--faint); font-weight: 700; letter-spacing: 0.04em; }
+
+/* ---------------------------------------------------------------- success */
+.succ-wrap { padding: 64px 24px 24px; text-align: center; }
+.succ-ring {
+  width: 84px; height: 84px; margin: 0 auto 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--green-soft); color: var(--green-ink);
+  box-shadow: 0 0 0 10px rgba(16, 185, 129, 0.09);
+}
+.succ-wrap h1 { font-family: var(--font-head); font-size: 21px; font-weight: 900; margin: 0 0 8px; letter-spacing: -0.025em; }
+.succ-wrap p { font-size: 12.5px; color: var(--muted); line-height: 1.65; margin: 0 auto 18px; max-width: 300px; word-break: break-all; }
+.succ-wrap .cc-code { text-align: left; max-width: 300px; margin: 0 auto 18px; }
+.succ-acts { display: flex; flex-wrap: wrap; gap: 8px; max-width: 300px; margin: 0 auto; }
+.succ-acts .wide { flex-basis: 100%; }
+
+/* account rows used as buttons */
+button.arow { width: 100%; text-align: left; font: inherit; cursor: pointer; }
+button.arow .chev { margin-left: auto; color: var(--faint); display: grid; place-items: center; }
