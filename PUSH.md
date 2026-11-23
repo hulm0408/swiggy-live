@@ -1,3 +1,6 @@
+> **Status: pushed.** `hulm0408/swiggy-live`, branch `main`, commit `28b7533` — private repo, topics set.
+> This file is kept as the record of how it got there; nothing left to run.
+
 # Pushing this to GitHub
 
 The repo is committed and ready — one clean commit on `main`, 19 files, screenshots included. There is no credential in this sandbox and the GitHub connector isn't available here, so the push itself has to carry an identity it doesn't have yet. Two ways, both one command away.
