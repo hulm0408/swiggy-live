@@ -8,9 +8,17 @@ Real restaurants, real menus, real prices, real images, real ETAs. Lucknow by de
 |---|---|---|
 | ![home](docs/home.png) | ![menu](docs/menu.png) | ![item sheet](docs/item-sheet.png) |
 
-| Search | Cart | Tracking | Endpoint map |
-|---|---|---|---|
-| ![search](docs/search.png) | ![cart](docs/cart.png) | ![tracking](docs/tracking.png) | ![api](docs/api-console.png) |
+| Search | Cart | Checkout |
+|---|---|---|
+| ![search](docs/search.png) | ![cart](docs/cart.png) | ![checkout](docs/checkout.png) |
+
+| Tracking | Orders | Endpoint map |
+|---|---|---|
+| ![tracking](docs/tracking.png) | ![orders](docs/orders.png) | ![api](docs/api-console.png) |
+
+| Dark |
+|---|
+| ![dark](docs/dark.png) |
 
 ```bash
 git clone <this repo> && cd swiggy-live
@@ -20,6 +28,21 @@ node server.js          # http://localhost:3000
 No dependencies. Node 18+.
 
 ---
+
+## 0. Design
+
+The interface follows the **Swiggy PRO** language from the reference build at `storelex.store/swiggy_web` — re-implemented from its tokens, not copied:
+
+| Token | Value |
+|---|---|
+| ground / card | `#fafbfd` / `#ffffff` |
+| accent | `linear-gradient(135deg, #38bdf8, #7dd3fc)` |
+| text / muted | `#0f172a` / `#64748b` |
+| status | mint `#d1fae5`, amber `#fef3c7`, red `#fee2e2` |
+| radii | 10 / 14 / 20 / 999 |
+| type | Outfit (headings) · Inter (body) |
+
+Light and dark both ship; the toggle sits in the app bar and persists. Everything else — the data, the proxy, the screens' behaviour — is this repo's own.
 
 ## 1. What you're looking at
 
@@ -133,7 +156,7 @@ Nothing here logs into an account, places an order, or touches payment. It reads
 
 ## 4. Screens
 
-- **Home** — location switcher (four real Lucknow coordinates, re-queries the listing), live category chips, restaurant grid with offer strips and rating chips, veg filter.
+- **Home** — app bar with brand + location pill + theme toggle, live-catalog banner, category chips, restaurant cards with offer pills and rating chips, veg filter. Bottom nav: Food · Search · Cart · Orders · API.
 - **Search** — debounced live query, Restaurants/Dishes tabs, dish cards carrying their restaurant.
 - **Menu** — hero, rating/ETA/cost badges, category rail with scroll-spy, veg mode, `ADD` vs `customisable` (variants/addons open the sheet), item sheet with portion radios, add-on checkboxes, live unit price.
 - **Cart** — single-restaurant rule enforced with the real "start a new cart" prompt, quantity steppers, coupons (`WELCOME50`, `TRYNEW`, `SWIGGYIT`, `FREEDEL`) with min-order checks, itemised bill.

@@ -309,6 +309,11 @@ ${o.inner}
     leaf: '<path d="M4 20c8 1 16-4 16-16C10 4 3 10 4 20z"/><path d="M4 20C7 15 11 12 16 10"/>',
     help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 114 2c-.9.7-1.6 1.2-1.6 2.4"/><circle cx="12" cy="17.4" r=".9" fill="currentColor" stroke="none"/>',
     user: '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20a7 7 0 0114 0"/>',
+    cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M3 4h2.2l2.3 11.2A2 2 0 009.5 17h8.2a2 2 0 002-1.6L21 7H6"/>',
+    bolt: '<path d="M13 2L5 13.5h5.5L10 22l8-11.5h-5.5z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
+    moon: '<path d="M20 14.2A8.2 8.2 0 019.8 4 8.5 8.5 0 1020 14.2z"/>',
+    wallet: '<path d="M3 7.5A2.5 2.5 0 015.5 5H18a3 3 0 013 3v9a3 3 0 01-3 3H6a3 3 0 01-3-3z"/><path d="M3 9h15"/><circle cx="17" cy="13.5" r="1.2"/>',
   };
   function icon(name, size) {
     const p = I[name] || '';

@@ -35,6 +35,7 @@ const Core = (function () {
 
   const S = {
     tab: 'food',
+    theme: store.get('sw.theme', 'light'),
     stack: [{ v: 'home' }],
     loc: store.get('sw.loc', 'gomti'),
     addr: store.get('sw.addr', 'B-42, Sector 14, Gomti Nagar, Lucknow'),
@@ -48,7 +49,15 @@ const Core = (function () {
     live: { listingMs: 0, menuMs: 0, calls: 0 },
   };
 
+  const applyTheme = () => {
+    document.documentElement.setAttribute('data-theme', S.theme === 'dark' ? 'dark' : 'light');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', S.theme === 'dark' ? '#0b1220' : '#38bdf8');
+  };
+  applyTheme();
+
   const save = () => {
+    store.set('sw.theme', S.theme);
     store.set('sw.cart', S.cart);
     store.set('sw.coupon', S.coupon);
     store.set('sw.orders', S.orders.slice(0, 12));
@@ -133,6 +142,7 @@ const Core = (function () {
     app.scrollTop = key === lastKey ? keep : 0;
     lastKey = key;
     document.body.setAttribute('data-view', v.v);
+    applyTheme();
     if (typeof window.__afterRender === 'function') window.__afterRender(app, v);
     paintChrome();
   }
@@ -247,10 +257,11 @@ const Core = (function () {
 
   /* ---------- chrome: bottom nav + cart pill ---------- */
   const TABS = [
-    { id: 'food', label: 'Food', art: 'thali' },
-    { id: 'instamart', label: 'Instamart', art: 'grocery' },
-    { id: 'dineout', label: 'Dineout', art: 'chai' },
-    { id: 'api', label: 'API', art: 'pizza' },
+    { id: 'food', label: 'Food' },
+    { id: 'search', label: 'Search' },
+    { id: 'cart', label: 'Cart' },
+    { id: 'orders', label: 'Orders' },
+    { id: 'api', label: 'API' },
   ];
 
   function paintChrome() {
@@ -277,11 +288,12 @@ const Core = (function () {
   function tabIcon(id) {
     return (
       {
-        food: Art.icon('store', 22),
-        instamart: Art.icon('bag', 22),
-        dineout: Art.icon('bike', 22),
-        api: Art.icon('dots', 22),
-      }[id] || Art.icon('store', 22)
+        food: Art.icon('store', 21),
+        search: Art.icon('search', 21),
+        cart: Art.icon('cart', 21),
+        orders: Art.icon('clock', 21),
+        api: Art.icon('bolt', 21),
+      }[id] || Art.icon('store', 21)
     );
   }
 
@@ -337,5 +349,6 @@ const Core = (function () {
     save,
     timeAgo,
     store,
+    applyTheme,
   };
 })();

@@ -32,15 +32,37 @@
     </div>`;
   }
 
+  function appBar() {
+    return `<header class="appbar">
+      <div class="brand">
+        <div class="logo-tile">S</div>
+        <span class="wordmark">Swiggy</span>
+        <span class="prochip">LIVE</span>
+      </div>
+      <div class="hdr-actions">
+        <button class="loc-pill" data-act="pick-loc">
+          ${icon('pin', 13)}<span class="lp-t">${esc(here().label)}</span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="theme-btn" data-act="toggle-theme" aria-label="Theme">${icon(S.theme === 'dark' ? 'sun' : 'moon', 16)}</button>
+      </div>
+    </header>`;
+  }
+
   function locBar() {
-    const l = here();
-    return `<div class="loc-row">
+    return `${appBar()}
+    <div class="loc-row">
       <button class="loc-main" data-act="pick-loc">
-        <div class="loc-top">Deliver to <b>${esc(S.addr.split(',')[0])}</b> <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+        <div class="loc-top">Deliver to ${esc(S.addr.split(',')[0])} ${icon('caret', 13)}</div>
         <div class="loc-addr">${esc(S.addr)}</div>
       </button>
-      <button class="av-btn" data-act="go-account" aria-label="Account">${icon('user', 19)}</button>
+      <button class="av-btn" data-act="go-account" aria-label="Account">${icon('user', 18)}</button>
     </div>`;
+  }
+
+  function sectionHead(iconName, title, count) {
+    return `<h2 class="sec-title">${icon(iconName, 16)}<span>${esc(title)}</span>
+      <i class="line"></i>${count !== undefined ? `<span class="count">${count}</span>` : ''}</h2>`;
   }
 
   function searchEntry() {
@@ -89,10 +111,19 @@
     const city = (r.city || 'lucknow').replace(/^\w/, (c) => c.toUpperCase());
     const chips = (r.chips || []).slice(0, 18);
     const rests = r.restaurants || [];
+    const ms = r.upstreamMs || r.__ms || 0;
 
     return `${locBar()}
     ${searchEntry()}
-    ${headerLive('/dapi/restaurants/list/v5', r, `${rests.length} restaurants · ${city}`)}
+
+    <div class="banner-card" data-act="tab" data-tab="api">
+      <div class="bc-icon">${icon('bolt', 20)}</div>
+      <div class="bc-text">
+        <div class="bc-title">Live catalog · ${city}</div>
+        <div class="bc-sub">${rests.length} restaurants · 200 OK · ${ms} ms</div>
+      </div>
+      <span class="bc-go">Map ${icon('chev', 13)}</span>
+    </div>
 
     <div class="rail" id="chiprail">
       ${chips
@@ -106,15 +137,19 @@
     </div>
 
     <div class="pillbar">
-      <button class="pill" data-act="noop">${icon('filter', 14)} Filters</button>
-      <button class="pill" data-act="noop">${icon('sort', 14)} Sort by</button>
-      <button class="pill" data-act="toggle-veg">${icon('leaf', 14)} Pure Veg</button>
+      <button class="pill ${S.veg ? 'on' : ''}" data-act="toggle-veg">${icon('leaf', 13)} Pure Veg</button>
+      <button class="pill" data-act="noop">${icon('filter', 13)} Filters</button>
+      <button class="pill" data-act="noop">${icon('sort', 13)} Sort</button>
       <button class="pill" data-act="noop">Fast Delivery</button>
       <button class="pill" data-act="noop">Offers</button>
     </div>
 
-    <h2 class="sec-title">Restaurants with online food delivery in ${city}</h2>
+    ${sectionHead('store', 'Restaurants near ' + esc(here().label), rests.length)}
     <div class="cards">${rests.map(restoCard).join('')}</div>
+
+    <div class="pad-16">
+      <button class="btn ghost wide" data-act="tab" data-tab="api">Endpoint map — how this feed is fetched</button>
+    </div>
     <div class="foot-note">Live catalog · ${rests.length} open restaurants near ${esc(here().label)} · data straight off the app's own endpoints</div>`;
   };
 
@@ -137,7 +172,7 @@
 
   /* ---------------------------------------------------------------- SEARCH */
   RENDERERS.search = async function (params) {
-    S.tab = 'food';
+    S.tab = 'search';
     const str = params && params.str ? params.str : '';
     const tab = (params && params.tab) || 'RESTAURANT';
     let results = '';
@@ -190,7 +225,8 @@
     }
     const list = (r.restaurants || []).filter((x) => !S.veg || x.veg);
     return `${headerLive('/dapi/restaurants/search/v3 · RESTAURANT', r, `${list.length} restaurants`)}${tabs}
-      <div class="cards">${list.map(restoCard).join('')}</div>`;
+      <div class="cards">${list.map(restoCard).join('')}</div>
+      <div class="foot-note">${list.length} live results for “${esc(str)}”</div>`;
   }
 
   /* ---------------------------------------------------------------- RESTAURANT */
@@ -286,7 +322,7 @@
 
   /* ---------------------------------------------------------------- CART */
   RENDERERS.cart = async function () {
-    S.tab = 'food';
+    S.tab = 'cart';
     const cart = S.cart;
     if (!cart || !cartCount()) {
       return `<div class="searchhead"><button class="iconbtn" data-act="back">${icon('back', 20)}</button><b>Cart</b></div>
@@ -344,12 +380,13 @@
     <div class="stickybar">
       <div class="sb-l"><b>${money(b.total)}</b><span>TOTAL</span></div>
       <button class="sb-btn" data-act="go-checkout">Proceed to checkout ${icon('chev', 16)}</button>
-    </div>`;
+    </div>
+    <div class="sticky-pad"></div>`;
   };
 
   /* ---------------------------------------------------------------- CHECKOUT */
   RENDERERS.checkout = async function () {
-    S.tab = 'food';
+    S.tab = 'cart';
     if (!S.cart) return RENDERERS.cart();
     const b = bill();
     const pays = [
@@ -398,12 +435,13 @@
     <div class="stickybar">
       <div class="sb-l"><b>${money(b.total)}</b><span>TOTAL</span></div>
       <button class="sb-btn" data-act="place-order">Place order</button>
-    </div>`;
+    </div>
+    <div class="sticky-pad"></div>`;
   };
 
   /* ---------------------------------------------------------------- TRACK */
   RENDERERS.track = async function (params) {
-    S.tab = 'food';
+    S.tab = 'orders';
     const o = S.orders.find((x) => x.id === params.id) || S.orders[0];
     if (!o) return `<div class="pad-24"><p>No order found.</p></div>`;
     const elapsed = (Date.now() - o.placedAt) / 1000;
@@ -453,20 +491,20 @@
     const x = 40 + t * 246;
     const y = 122 - Math.sin(t * Math.PI) * 60;
     return `<svg viewBox="0 0 340 220" class="mapsvg">
-      <rect width="340" height="220" fill="#eef0e9"/>
-      <path d="M0 170 H340 M0 96 H340 M84 0 V220 M232 0 V220" stroke="#dfe3d8" stroke-width="14"/>
-      <path d="M0 170 H340 M0 96 H340 M84 0 V220 M232 0 V220" stroke="#f7f8f4" stroke-width="9"/>
-      <rect x="18" y="24" width="48" height="52" rx="4" fill="#e2e7da"/>
-      <rect x="104" y="16" width="100" height="62" rx="4" fill="#e2e7da"/>
-      <rect x="252" y="22" width="66" height="54" rx="4" fill="#e2e7da"/>
-      <rect x="20" y="120" width="46" height="36" rx="4" fill="#e2e7da"/>
-      <rect x="250" y="118" width="70" height="40" rx="4" fill="#e2e7da"/>
-      <path d="M40 122 Q150 26 286 62" stroke="#FC8019" stroke-width="4" fill="none" stroke-dasharray="7 7" opacity=".85"/>
-      <circle cx="40" cy="122" r="10" fill="#fff" stroke="#1c7c3c" stroke-width="3"/>
-      <circle cx="286" cy="62" r="10" fill="#fff" stroke="#FC8019" stroke-width="3"/>
+      <rect width="340" height="220" fill="var(--map-ground)"/>
+      <path d="M0 170 H340 M0 96 H340 M84 0 V220 M232 0 V220" stroke="var(--map-line)" stroke-width="14"/>
+      <path d="M0 170 H340 M0 96 H340 M84 0 V220 M232 0 V220" stroke="var(--map-road)" stroke-width="9"/>
+      <rect x="18" y="24" width="48" height="52" rx="4" fill="var(--map-block)"/>
+      <rect x="104" y="16" width="100" height="62" rx="4" fill="var(--map-block)"/>
+      <rect x="252" y="22" width="66" height="54" rx="4" fill="var(--map-block)"/>
+      <rect x="20" y="120" width="46" height="36" rx="4" fill="var(--map-block)"/>
+      <rect x="250" y="118" width="70" height="40" rx="4" fill="var(--map-block)"/>
+      <path d="M40 122 Q150 26 286 62" stroke="#38bdf8" stroke-width="4" fill="none" stroke-dasharray="7 7" opacity=".85"/>
+      <circle cx="40" cy="122" r="10" fill="#fff" stroke="#10b981" stroke-width="3"/>
+      <circle cx="286" cy="62" r="10" fill="#fff" stroke="#38bdf8" stroke-width="3"/>
       <g transform="translate(${x} ${y})">
-        <circle r="16" fill="#fff" stroke="#FC8019" stroke-width="3"/>
-        <g transform="translate(-9 -7) scale(0.78)" fill="none" stroke="#FC8019" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle r="16" fill="#fff" stroke="#38bdf8" stroke-width="3"/>
+        <g transform="translate(-9 -7) scale(0.78)" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/>
           <path d="M5.5 16.5L9 8h6l3.5 8.5"/><path d="M9 8h4"/>
         </g>
@@ -541,26 +579,31 @@
 
   /* ---------------------------------------------------------------- ACCOUNT */
   RENDERERS.account = async function () {
-    return `<div class="searchhead"><button class="iconbtn" data-act="back">${icon('back', 20)}</button><b>Account</b></div>
+    S.tab = 'orders';
+    return `${appBar()}
     <div class="acct-top">
-      <div class="av-btn big">${icon('user', 26)}</div>
-      <div><h2>Guest</h2><span>Sign in to order — mocked here</span></div>
+      <div class="av-btn big">${icon('user', 24)}</div>
+      <div><h2>Guest</h2><span>Orders placed in this session</span></div>
     </div>
+    ${sectionHead('wallet', 'Account', undefined)}
     <div class="acct-list">
-      <div class="arow">${icon('order', 18)}<div><b>Orders</b><span>${S.orders.length} in this session</span></div></div>
-      <div class="arow">${icon('pin', 18)}<div><b>Addresses</b><span>${esc(S.addr)}</span></div></div>
-      <div class="arow">${icon('one', 18)}<div><b>Swiggy One</b><span>Not a member</span></div></div>
-      <div class="arow">${icon('help', 18)}<div><b>Help</b><span>Support is mocked</span></div></div>
+      <div class="arow">${icon('order', 17)}<div><b>Orders</b><span>${S.orders.length} in this session</span></div></div>
+      <div class="arow">${icon('pin', 17)}<div><b>Address</b><span>${esc(S.addr)}</span></div></div>
+      <div class="arow">${icon('one', 17)}<div><b>Swiggy One</b><span>Not a member</span></div></div>
+      <div class="arow">${icon('help', 17)}<div><b>Help</b><span>Support is mocked</span></div></div>
     </div>
-    ${S.orders.length
-      ? `<h2 class="sec-title">Recent orders</h2>${S.orders
-          .map(
-            (o) => `<button class="orow" data-act="open-track" data-id="${o.id}">
-        <div><b>${esc(o.restName)}</b><span>${o.items.length} items · ${money(o.total)} · ${timeAgo(o.placedAt)}</span></div>
-        <span class="chev">${icon('chev', 16)}</span></button>`
-          )
-          .join('')}`
-      : ''}`;
+    ${
+      S.orders.length
+        ? `${sectionHead('clock', 'Recent orders', S.orders.length)}
+          <div class="acct-list">${S.orders
+            .map(
+              (o) => `<button class="orow" data-act="open-track" data-id="${o.id}">
+          <div><b>${esc(o.restName)}</b><span>#${esc(o.id)} · ${o.items.length} items · ${money(o.total)} · ${timeAgo(o.placedAt)}</span></div>
+          <span class="chev">${icon('chev', 16)}</span></button>`
+            )
+            .join('')}</div>`
+        : `<div class="empty"><div class="empty-art">${icon('clock', 30)}</div><h3>No orders yet</h3><p>Place one and it lands here with a live timeline.</p><button class="btn solid" data-act="tab" data-tab="food">Browse restaurants</button></div>`
+    }`;
   };
 
   /* ---------------------------------------------------------------- ACTIONS */
@@ -570,7 +613,14 @@
 
     tab: (el) => {
       const t = el.dataset.tab;
-      reset(t === 'food' ? 'home' : t === 'api' ? 'api' : t === 'instamart' ? 'instamart' : 'dineout');
+      const target = { food: 'home', api: 'api', search: 'search', cart: 'cart', orders: 'account', instamart: 'instamart', dineout: 'dineout' }[t];
+      reset(target, t === 'search' ? {} : {});
+    },
+    'toggle-theme': () => {
+      S.theme = S.theme === 'dark' ? 'light' : 'dark';
+      save();
+      C.applyTheme();
+      C.render();
     },
 
     'go-search': () => go('search', {}),
