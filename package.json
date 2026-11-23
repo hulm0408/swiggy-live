@@ -1,0 +1,13 @@
+{
+  "name": "swiggy-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Swiggy Android app rebuilt on the app's own reverse-engineered endpoints",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "probe": "bash tools/probe.sh"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
