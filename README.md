@@ -69,7 +69,7 @@ There is no phone number, no OTP, no password. `auth.js` holds a table of access
 keys; the app has exactly one field and posts one JSON body.
 
 ```
-POST /api/auth/login      { key: "SWG-WZEY-9089-69ZS" }
+POST /api/auth/login      { key: "SWG-XXXX-XXXX-XXXX" }
      → { ok, signedIn: true, user, claims } + Set-Cookie: swg_sid=…; HttpOnly; SameSite=Lax
 
 GET  /api/auth/me         → { ok, signedIn, user, claims }
@@ -81,13 +81,25 @@ POST /api/auth/keys/revoke  { id } or { key }  → kill one, and every session i
 ```
 
 The login field takes the bare key **or** the JSON body itself — paste
-`{"key":"SWG-WZEY-9089-69ZS"}` and it parses.
+`{"key":"SWG-XXXX-XXXX-XXXX"}` and it parses.
 
 ### Keys
 
+No key ships in the repository. With nothing configured, the server generates one
+admin key at boot and prints it once:
+
 ```
-SWG-WZEY-9089-69ZS        seeded, admin, label "Owner"
+  ── ACCESS KEY (dev) ────────────────────────────────
+   SWG-X6AK-XENW-3B6E
+   sign in with this · it is regenerated whenever the
+   container restarts, so set AUTH_ACCESS_KEYS for a
+   key that survives a deploy
+  ────────────────────────────────────────────────────
 ```
+
+A key that has appeared in a commit is treated as public: those values are listed
+in `BURNED_KEYS` in `auth.js` and revoked at startup, so a deployment that ever
+seeded one loses it on the next boot.
 
 Format is `SWG-` + three groups of four from a 32-char alphabet with `0/O/1/I`
 removed, so a key can be read off a screen without ambiguity. Keys are stored as
@@ -150,7 +162,7 @@ base64url JSON, so a link is opaque and survives being pasted into chat.
 |---|---|---|
 | `#a=<b64url>` | `{ a: address, y: lat, g: lng, l: label }` | `#a=eyJhIjoiRmxhdCA3…` |
 | `#c=<b64url>` | `{ r, n, e, g, i: [{ k, id, nm, p, v, q, va, an }] }` | `#cart&c=eyJyIjoiUjQy…` |
-| `#k=<key>` | an access key — signs the visitor in | `#claim&k=SWG-WZEY-9089-69ZS` |
+| `#k=<key>` | an access key — signs the visitor in | `#claim&k=SWG-XXXX-XXXX-XXXX` |
 
 The bare screen name always works too: `#home`, `#claim`, `#cart`, `#orders`,
 `#success`, `#login`.
